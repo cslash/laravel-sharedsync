@@ -1,0 +1,13 @@
+/vendor/
+/node_modules/
+.env
+.deploy-manifest.json
+.deploy-manifest.json.tmp
+/tests/temp/
+.phpunit.result.cache
+.idea/
+.vscode/
+composer.lock
+npm-debug.log
+yarn-error.log
+.DS_Store

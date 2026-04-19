@@ -1,0 +1,41 @@
+{
+    "name": "cslash/laravel-sharedsync",
+    "description": "Deploy Laravel projects to FTP/SFTP-only hosting with incremental updates.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ciro Scognamiglio",
+            "email": "ciro@cslash.com"
+        }
+    ],
+    "version": "0.1.0",
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^10.0|^11.0|^12.0",
+        "illuminate/console": "^10.0|^11.0|^12.0",
+        "symfony/process": "^6.0|^7.0",
+        "phpseclib/phpseclib": "^3.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "orchestra/testbench": "^8.0|^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Cslash\\SharedSync\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Cslash\\SharedSync\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Cslash\\SharedSync\\SharedSyncServiceProvider"
+            ]
+        }
+    }
+}
