@@ -28,19 +28,10 @@ class Builder
 
         $this->copyProjectToTemp();
 
-        if ($this->config['composer'] ?? false) {
-            $this->runStep(['composer', 'install', '--no-dev', '--optimize-autoloader'], 'Installing Composer dependencies...');
-        }
+        $this->runStep(['composer', 'install', '--no-dev', '--optimize-autoloader'], 'Installing Composer dependencies...');
 
         if ($this->config['npm'] ?? false) {
-            $npmCommand = $this->config['npm_command'] ?? 'ci';
-
-            if ($npmCommand === 'ci' && !file_exists($this->buildPath . DIRECTORY_SEPARATOR . 'package-lock.json')) {
-                $this->output->writeln("<comment>package-lock.json not found, falling back to 'npm install'</comment>");
-                $npmCommand = 'install';
-            }
-
-            $this->runStep(['npm', $npmCommand], "Installing NPM dependencies ({$npmCommand})...");
+            $this->runStep(['npm', 'i'], "Installing NPM dependencies (npm i)...");
             $this->runStep(['npm', 'run', 'build'], 'Building assets...');
         }
 

@@ -51,9 +51,7 @@ return [
     |
     */
     'build' => [
-        'composer' => false, // Set to true if you want to run composer install --no-dev locally before upload
         'npm' => true,
-        'npm_command' => 'ci', // 'ci' for deterministic builds (requires package-lock.json), or 'install'
         'artisan_cache' => true,
     ],
 
@@ -66,6 +64,7 @@ return [
     |
     */
     'ignore' => [
+        '.DS_Store',
         '.git',
         '.env',
         'node_modules',
