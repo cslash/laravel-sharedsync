@@ -33,7 +33,14 @@ class Builder
         }
 
         if ($this->config['npm'] ?? false) {
-            $this->runStep(['npm', 'ci'], 'Installing NPM dependencies (deterministic)...');
+            $npmCommand = $this->config['npm_command'] ?? 'ci';
+
+            if ($npmCommand === 'ci' && !file_exists($this->buildPath . DIRECTORY_SEPARATOR . 'package-lock.json')) {
+                $this->output->writeln("<comment>package-lock.json not found, falling back to 'npm install'</comment>");
+                $npmCommand = 'install';
+            }
+
+            $this->runStep(['npm', $npmCommand], "Installing NPM dependencies ({$npmCommand})...");
             $this->runStep(['npm', 'run', 'build'], 'Building assets...');
         }
 
