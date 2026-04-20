@@ -87,15 +87,11 @@ Example `config/sharedsync.php`:
 
 ## Important Note on Local Build
 
-The `composer` build step runs `composer install --no-dev --optimize-autoloader` locally.
-If you run the deployment command from the same environment where your dev-dependencies 
-are needed (e.g., your local development machine), this may cause the current Artisan 
-process to fail if it tries to load a dev-dependency class (like `collision`) after it 
-has been removed from the `vendor` folder.
+The `composer` build step runs `composer install --no-dev --optimize-autoloader` in an isolated temporary 
+directory. This ensures that your local development environment's `vendor` folder remains untouched 
+and the current Artisan process is not affected by the removal of dev-dependencies.
 
-By default, the `composer` build step is **disabled** in the configuration to prevent this. 
-If you enable it, ensure you are running the deployment in a dedicated build environment or 
-be prepared to run `composer install` again after the deployment.
+This allows you to safely enable the `composer` build step in your configuration.
 
 ## Usage
 
@@ -161,12 +157,13 @@ php artisan sharedsync:deploy --only=app,config,resources/views
 
 ## How It Works
 
-1. **Build**: Runs `composer install --no-dev`, `npm run build`, and `php artisan *:cache` locally.
-2. **Scan**: Recursively scans the local project directory, applying ignore rules.
+1. **Build**: Creates an isolated temporary directory, copies the project (excluding `vendor`, `node_modules`, `.git`), and runs `composer install --no-dev`, `npm ci`, `npm run build`, and `php artisan *:cache` inside it.
+2. **Scan**: Recursively scans the build directory, applying ignore rules.
 3. **Compare**: Compares the scanned files against the last deployment manifest.
-4. **Upload**: Connects via FTP/SFTP and uploads new or modified files.
-5. **Delete**: Removes files from the remote server that no longer exist locally (if enabled).
+4. **Upload**: Connects via FTP/SFTP and uploads new or modified files from the build directory.
+5. **Delete**: Removes files from the remote server that no longer exist in the build directory (if enabled).
 6. **Manifest**: Updates the local `.deploy-manifest.json` file.
+7. **Cleanup**: Deletes the temporary build directory.
 
 ## License
 

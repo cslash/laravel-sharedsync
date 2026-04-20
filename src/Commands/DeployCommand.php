@@ -30,70 +30,67 @@ class DeployCommand extends Command
 
         $this->info('Starting SharedSync Deployment...');
 
-        // 1. Build
-        if (!$this->option('dry-run')) {
-            $builder = new Builder($config['build'], $this->output);
-            try {
-                $builder->build();
-            } catch (\Exception $e) {
-                $this->error($e->getMessage());
-                return 1;
-            }
-        } else {
-            $this->warn('Skipping build in dry-run mode.');
-        }
+        $buildPath = base_path();
+        $builder = null;
 
-        // 2. Scan
-        $this->info('Scanning files...');
-        $scanner = new FileScanner(base_path(), $config['ignore']);
-        $allFiles = $scanner->scan();
-
-        // Filter by --only
-        if ($this->option('only')) {
-            $only = explode(',', $this->option('only'));
-            $allFiles = array_filter($allFiles, function ($file) use ($only) {
-                foreach ($only as $path) {
-                    if (str_starts_with($file['path'], trim($path))) {
-                        return true;
-                    }
-                }
-                return false;
-            });
-        }
-
-        // 3. Manifest Comparison
-        $manifest = new Manifest(base_path());
-        $lastManifestData = $this->option('force') ? [] : $manifest->load();
-        
-        $diff = $manifest->compare($allFiles, $lastManifestData);
-        $toUpload = $diff['upload'];
-        $toDelete = $config['options']['delete_removed'] ? $diff['delete'] : [];
-
-        if (empty($toUpload) && empty($toDelete)) {
-            $this->info('Everything is up to date.');
-            return 0;
-        }
-
-        $this->table(
-            ['Action', 'Count'],
-            [
-                ['Upload/Update', count($toUpload)],
-                ['Delete', count($toDelete)],
-                ['Total Files Scanned', count($allFiles)],
-            ]
-        );
-
-        if ($this->option('dry-run')) {
-            $this->warn('Dry-run: No files were changed.');
-            return 0;
-        }
-
-        // 4. Upload
-        $uploader = $this->getUploader($config);
-        
         try {
+            // 1. Build
+            if (!$this->option('dry-run')) {
+                $builder = new Builder($config['build'], base_path(), $this->output);
+                $buildPath = $builder->build();
+            } else {
+                $this->warn('Skipping build in dry-run mode.');
+            }
+
+            // 2. Scan
+            $this->info('Scanning files...');
+            $scanner = new FileScanner($buildPath, $config['ignore']);
+            $allFiles = $scanner->scan();
+
+            // Filter by --only
+            if ($this->option('only')) {
+                $only = explode(',', $this->option('only'));
+                $allFiles = array_filter($allFiles, function ($file) use ($only) {
+                    foreach ($only as $path) {
+                        if (str_starts_with($file['path'], trim($path))) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+            }
+
+            // 3. Manifest Comparison
+            $manifest = new Manifest(base_path());
+            $lastManifestData = $this->option('force') ? [] : $manifest->load();
+
+            $diff = $manifest->compare($allFiles, $lastManifestData);
+            $toUpload = $diff['upload'];
+            $toDelete = $config['options']['delete_removed'] ? $diff['delete'] : [];
+
+            if (empty($toUpload) && empty($toDelete)) {
+                $this->info('Everything is up to date.');
+                return 0;
+            }
+
+            $this->table(
+                ['Action', 'Count'],
+                [
+                    ['Upload/Update', count($toUpload)],
+                    ['Delete', count($toDelete)],
+                    ['Total Files Scanned', count($allFiles)],
+                ]
+            );
+
+            if ($this->option('dry-run')) {
+                $this->warn('Dry-run: No files were changed.');
+                return 0;
+            }
+
+            // 4. Upload
+            $uploader = $this->getUploader($config, $buildPath);
             $uploader->connect();
-            
+
             if (!empty($toUpload)) {
                 $this->info('Uploading files...');
                 $uploader->upload($toUpload);
@@ -105,7 +102,7 @@ class DeployCommand extends Command
             }
 
             $uploader->disconnect();
-            
+
             // 5. Save Manifest
             $this->info('Updating manifest...');
             $manifest->save($allFiles);
@@ -113,11 +110,15 @@ class DeployCommand extends Command
             $duration = round(microtime(true) - $startTime, 2);
             $this->info("Deployment finished successfully in {$duration} seconds!");
 
+            return 0;
+
         } catch (\Exception $e) {
             $this->error("Deployment failed: " . $e->getMessage());
             return 1;
+        } finally {
+            if ($builder) {
+                $builder->cleanup();
+            }
         }
-
-        return 0;
     }
 }

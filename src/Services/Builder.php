@@ -9,22 +9,31 @@ class Builder
 {
     protected $output;
     protected $config;
+    protected $basePath;
+    protected $buildPath;
 
-    public function __construct(array $config, OutputInterface $output)
+    public function __construct(array $config, string $basePath, OutputInterface $output)
     {
         $this->config = $config;
+        $this->basePath = rtrim($basePath, DIRECTORY_SEPARATOR);
         $this->output = $output;
     }
 
-    public function build(): void
+    /**
+     * @return string The build directory path
+     */
+    public function build(): string
     {
+        $this->buildPath = $this->createTempDirectory();
+
+        $this->copyProjectToTemp();
+
         if ($this->config['composer'] ?? false) {
-            $this->output->writeln('<comment>Warning: Running "composer install --no-dev" might cause the current Artisan process to fail if it tries to load dev-dependencies after they are removed.</comment>');
             $this->runStep(['composer', 'install', '--no-dev', '--optimize-autoloader'], 'Installing Composer dependencies...');
         }
 
         if ($this->config['npm'] ?? false) {
-            $this->runStep(['npm', 'install'], 'Installing NPM dependencies...');
+            $this->runStep(['npm', 'ci'], 'Installing NPM dependencies (deterministic)...');
             $this->runStep(['npm', 'run', 'build'], 'Building assets...');
         }
 
@@ -33,6 +42,81 @@ class Builder
             $this->runStep(['php', 'artisan', 'route:cache'], 'Caching routes...');
             $this->runStep(['php', 'artisan', 'view:cache'], 'Caching views...');
         }
+
+        return $this->buildPath;
+    }
+
+    protected function createTempDirectory(): string
+    {
+        $tempBase = $this->config['temp_path'] ?? sys_get_temp_dir();
+        $path = rtrim($tempBase, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'sharedsync-build-' . uniqid();
+
+        if (!mkdir($path, 0777, true) && !is_dir($path)) {
+            throw new \RuntimeException("Could not create temporary directory: {$path}");
+        }
+
+        return $path;
+    }
+
+    protected function copyProjectToTemp(): void
+    {
+        $this->output->writeln("<info>Copying project to temporary directory...</info>");
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($this->basePath, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        $excludes = ['.git', 'vendor', 'node_modules'];
+
+        foreach ($iterator as $item) {
+            $relativePath = $this->getRelativePath($item->getPathname());
+
+            // Check if it should be excluded
+            foreach ($excludes as $exclude) {
+                if ($relativePath === $exclude || str_starts_with($relativePath, $exclude . DIRECTORY_SEPARATOR)) {
+                    continue 2;
+                }
+            }
+
+            $targetPath = $this->buildPath . DIRECTORY_SEPARATOR . $relativePath;
+
+            if ($item->isDir()) {
+                if (!is_dir($targetPath)) {
+                    mkdir($targetPath, 0777, true);
+                }
+            } else {
+                copy($item->getPathname(), $targetPath);
+            }
+        }
+    }
+
+    protected function getRelativePath(string $fullPath): string
+    {
+        $path = str_replace($this->basePath, '', $fullPath);
+        return ltrim($path, DIRECTORY_SEPARATOR);
+    }
+
+    public function cleanup(): void
+    {
+        if ($this->buildPath && is_dir($this->buildPath)) {
+            $this->output->writeln("<info>Cleaning up build directory...</info>");
+            $this->deleteDirectory($this->buildPath);
+        }
+    }
+
+    protected function deleteDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $files = array_diff(scandir($dir), ['.', '..']);
+        foreach ($files as $file) {
+            $path = $dir . DIRECTORY_SEPARATOR . $file;
+            is_dir($path) ? $this->deleteDirectory($path) : unlink($path);
+        }
+        rmdir($dir);
     }
 
     protected function runStep(array $command, string $message): void
@@ -40,15 +124,19 @@ class Builder
         $this->output->writeln("<info>{$message}</info>");
 
         $process = new Process($command);
+        $process->setWorkingDirectory($this->buildPath);
         $process->setTimeout(600);
         $process->run(function ($type, $buffer) {
-            if ($this->output->isVerbose()) {
-                $this->output->write($buffer);
-            }
+            $this->output->write($buffer);
         });
 
         if (!$process->isSuccessful()) {
-            throw new \RuntimeException("Command failed: " . implode(' ', $command) . "\nError: " . $process->getErrorOutput());
+            throw new \RuntimeException(sprintf(
+                "Command failed with exit code %d: %s\nError: %s",
+                $process->getExitCode(),
+                implode(' ', $command),
+                $process->getErrorOutput()
+            ));
         }
     }
 }
