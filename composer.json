@@ -9,7 +9,6 @@
             "email": "ciro@cslash.com"
         }
     ],
-    "version": "0.1.0",
     "require": {
         "php": "^8.2",
         "illuminate/support": "^10.0|^11.0|^12.0",
