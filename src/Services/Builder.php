@@ -112,8 +112,15 @@ class Builder
         $files = array_diff(scandir($dir), ['.', '..']);
         foreach ($files as $file) {
             $path = $dir . DIRECTORY_SEPARATOR . $file;
-            is_dir($path) ? $this->deleteDirectory($path) : unlink($path);
+
+            if (!is_link($path) && is_dir($path)) {
+                $this->deleteDirectory($path);
+            } else {
+                unlink($path);
+            }
+
         }
+
         rmdir($dir);
     }
 
