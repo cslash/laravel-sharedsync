@@ -3,12 +3,11 @@
 namespace Cslash\SharedSync\Commands;
 
 use Illuminate\Console\Command;
-use Cslash\SharedSync\Services\Uploader\FtpUploader;
-use Cslash\SharedSync\Services\Uploader\SftpUploader;
-use Cslash\SharedSync\Services\Uploader\UploaderInterface;
 
 class TestConnectionCommand extends Command
 {
+    use InteractsWithUploader;
+
     protected $signature = 'sharedsync:test';
 
     protected $description = 'Test the connection to the remote server';
@@ -39,7 +38,7 @@ class TestConnectionCommand extends Command
             $driverConfig = $config[$driver];
             $remoteRoot = $driverConfig['root'] ?? '/';
             
-            if ($uploader->checkDirectoryExists($remoteRoot)) {
+            if ($uploader->is_dir($remoteRoot)) {
                 $this->info("Remote directory exists: {$remoteRoot}");
             } else {
                 $this->warn("Remote directory does not exist: {$remoteRoot}");
@@ -53,21 +52,6 @@ class TestConnectionCommand extends Command
             $this->error("Connection failed: " . $e->getMessage());
             return 1;
         }
-    }
-
-    protected function getUploader(array $config): UploaderInterface
-    {
-        $driver = $config['driver'];
-
-        if ($driver === 'ftp') {
-            return new FtpUploader($config['ftp'], base_path(), $this->output);
-        }
-
-        if ($driver === 'sftp') {
-            return new SftpUploader($config['sftp'], base_path(), $this->output);
-        }
-
-        throw new \InvalidArgumentException("Unsupported driver: {$driver}");
     }
 
     protected function displayConfig(string $driver, array $config): void

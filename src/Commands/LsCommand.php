@@ -3,12 +3,11 @@
 namespace Cslash\SharedSync\Commands;
 
 use Illuminate\Console\Command;
-use Cslash\SharedSync\Services\Uploader\FtpUploader;
-use Cslash\SharedSync\Services\Uploader\SftpUploader;
-use Cslash\SharedSync\Services\Uploader\UploaderInterface;
 
 class LsCommand extends Command
 {
+    use InteractsWithUploader;
+
     protected $signature = 'sharedsync:ls {path? : The remote path to list}';
 
     protected $description = 'List files on the remote server';
@@ -48,20 +47,5 @@ class LsCommand extends Command
             $this->error("Error: " . $e->getMessage());
             return 1;
         }
-    }
-
-    protected function getUploader(array $config): UploaderInterface
-    {
-        $driver = $config['driver'];
-
-        if ($driver === 'ftp') {
-            return new FtpUploader($config['ftp'], base_path(), $this->output);
-        }
-
-        if ($driver === 'sftp') {
-            return new SftpUploader($config['sftp'], base_path(), $this->output);
-        }
-
-        throw new \InvalidArgumentException("Unsupported driver: {$driver}");
     }
 }

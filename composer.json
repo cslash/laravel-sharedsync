@@ -30,6 +30,9 @@
             "Cslash\\SharedSync\\Tests\\": "tests/"
         }
     },
+    "scripts": {
+        "test": "vendor/bin/phpunit tests"
+    },
     "extra": {
         "laravel": {
             "providers": [

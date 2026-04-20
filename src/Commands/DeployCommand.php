@@ -6,12 +6,11 @@ use Illuminate\Console\Command;
 use Cslash\SharedSync\Services\Builder;
 use Cslash\SharedSync\Services\FileScanner;
 use Cslash\SharedSync\Services\Manifest;
-use Cslash\SharedSync\Services\Uploader\FtpUploader;
-use Cslash\SharedSync\Services\Uploader\SftpUploader;
-use Cslash\SharedSync\Services\Uploader\UploaderInterface;
 
 class DeployCommand extends Command
 {
+    use InteractsWithUploader;
+
     protected $signature = 'sharedsync:deploy 
                             {--dry-run : Only show what would be uploaded}
                             {--force : Ignore manifest and upload everything}
@@ -120,20 +119,5 @@ class DeployCommand extends Command
         }
 
         return 0;
-    }
-
-    protected function getUploader(array $config): UploaderInterface
-    {
-        $driver = $config['driver'];
-
-        if ($driver === 'ftp') {
-            return new FtpUploader($config['ftp'], base_path(), $this->output);
-        }
-
-        if ($driver === 'sftp') {
-            return new SftpUploader($config['sftp'], base_path(), $this->output);
-        }
-
-        throw new \InvalidArgumentException("Unsupported driver: {$driver}");
     }
 }
