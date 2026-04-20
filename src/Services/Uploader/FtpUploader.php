@@ -116,7 +116,7 @@ class FtpUploader implements UploaderInterface
         return true;
     }
 
-    protected function chdir(string $path): void
+    public function chdir(string $path): void
     {
         if (!@ftp_chdir($this->connection, $path)) {
             throw new \RuntimeException("Could not change directory to: {$path}");
@@ -130,7 +130,7 @@ class FtpUploader implements UploaderInterface
      * Ensure directories in path exist on FTP server,
      * if not create them recursively.
      */
-    protected function mkdir(string $path): void
+    public function mkdir(string $path): void
     {
         if ($path === '.' || $path === '/' || empty($path)) {
             return;

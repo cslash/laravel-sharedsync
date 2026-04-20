@@ -108,7 +108,14 @@ class SftpUploader implements UploaderInterface
         return true;
     }
 
-    protected function mkdir(string $path): void
+    public function chdir(string $path): void
+    {
+        if (!$this->sftp->chdir($path)) {
+            throw new \RuntimeException("Could not change SFTP directory to: {$path}");
+        }
+    }
+
+    public function mkdir(string $path): void
     {
         if ($path === '.' || $path === '/' || empty($path)) {
             return;

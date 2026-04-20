@@ -56,4 +56,15 @@ class MockUploader implements UploaderInterface
         return in_array($path, $this->existingDirectories) || in_array($path, $this->createdDirectories);
     }
 
+    public function chdir(string $path): void
+    {
+        //
+    }
+
+    public function mkdir(string $path): void
+    {
+        if (!in_array($path, $this->createdDirectories)) {
+            $this->createdDirectories[] = $path;
+        }
+    }
 }

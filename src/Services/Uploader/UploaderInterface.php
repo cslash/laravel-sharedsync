@@ -10,4 +10,6 @@ interface UploaderInterface
     public function list(string $path): array;
     public function disconnect(): void;
     public function is_dir(string $path): bool;
+    public function chdir(string $path): void;
+    public function mkdir(string $path): void;
 }
