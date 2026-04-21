@@ -8,7 +8,7 @@ use Cslash\SharedSync\Services\Manifest;
 
 class DiffCommand extends Command
 {
-    protected $signature = 'sharedsync:diff';
+    protected $signature = 'sharedsync:diff {--all : List all files with status} {--limit=100 : Paginate output (number of files per page)}';
 
     protected $description = 'List files to be updated or created on the remote server';
 
@@ -36,10 +36,13 @@ class DiffCommand extends Command
         $toUpload = $diff['upload'];
         $toUploadPaths = array_column($toUpload, 'path');
         
-        $lastManifestPaths = array_keys($lastManifestData);
-
         $this->info('Deployment Diff:');
         $this->line(str_repeat('-', 40));
+
+        $filesToShow = [];
+        $newCount = 0;
+        $updateCount = 0;
+        $unchangedCount = 0;
 
         foreach ($allFiles as $file) {
             $path = $file['path'];
@@ -48,19 +51,46 @@ class DiffCommand extends Command
             if (in_array($path, $toUploadPaths)) {
                 if (isset($lastManifestData[$path])) {
                     $status = 'U'; // Update
+                    $updateCount++;
                 } else {
                     $status = 'N'; // New
+                    $newCount++;
                 }
+            } else {
+                $unchangedCount++;
             }
             
-            $this->line(sprintf('%s %s', $status, $path));
+            if ($status !== ' ' || $this->option('all')) {
+                $filesToShow[] = sprintf('%s %s', $status, $path);
+            }
+        }
+
+        $limit = $this->option('limit');
+
+        if ($limit && count($filesToShow) > $limit) {
+            $chunks = array_chunk($filesToShow, (int) $limit);
+            foreach ($chunks as $index => $chunk) {
+                foreach ($chunk as $line) {
+                    $this->line($line);
+                }
+
+                if ($index < count($chunks) - 1) {
+                    if (!$this->confirm('Show more?', true)) {
+                        break;
+                    }
+                }
+            }
+        } else {
+            foreach ($filesToShow as $line) {
+                $this->line($line);
+            }
         }
 
         $this->line(str_repeat('-', 40));
         $this->info(sprintf('Summary: %d new, %d to update, %d unchanged.', 
-            count(array_filter($toUpload, function($f) use ($lastManifestData) { return !isset($lastManifestData[$f['path']]); })),
-            count(array_filter($toUpload, function($f) use ($lastManifestData) { return isset($lastManifestData[$f['path']]); })),
-            count($allFiles) - count($toUpload)
+            $newCount,
+            $updateCount,
+            $unchangedCount
         ));
 
         return 0;
