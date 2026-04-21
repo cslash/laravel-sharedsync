@@ -1,5 +1,9 @@
 # Laravel SharedSync
 
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/cslash/laravel-sharedsync.svg?style=flat-square)](https://packagist.org/packages/cslash/laravel-sharedsync)
+[![Total Downloads](https://img.shields.io/packagist/dt/cslash/laravel-sharedsync.svg?style=flat-square)](https://packagist.org/packages/cslash/laravel-sharedsync)
+[![Software License](https://img.shields.io/packagist/l/cslash/laravel-sharedsync.svg?style=flat-square)](LICENSE)
+
 SharedSync is a Laravel package designed for deploying applications to shared hosting 
 environments where only FTP or SFTP access is available. 
 It builds the project locally and performs incremental uploads to the remote server.
