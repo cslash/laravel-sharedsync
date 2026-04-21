@@ -52,6 +52,10 @@ class SharedSyncTest extends TestCase
 
         // Ensure directories exist for the check
         mkdir($this->tempDir . '/storage/app/public', 0777, true);
+        mkdir($this->tempDir . '/storage/framework/cache', 0777, true);
+        mkdir($this->tempDir . '/storage/framework/sessions', 0777, true);
+        mkdir($this->tempDir . '/storage/framework/views', 0777, true);
+        mkdir($this->tempDir . '/storage/logs', 0777, true);
         mkdir($this->tempDir . '/bootstrap/cache', 0777, true);
         mkdir($this->tempDir . '/public', 0777, true);
         
@@ -67,8 +71,12 @@ class SharedSyncTest extends TestCase
             ->assertJson([
                 'status' => 'success',
                 'checks' => [
-                    'storage' => 'OK',
-                    'bootstrap_cache' => 'OK',
+                    'bootstrap/cache' => 'OK',
+                    'storage/app/public' => 'OK',
+                    'storage/framework/cache' => 'OK',
+                    'storage/framework/sessions' => 'OK',
+                    'storage/framework/views' => 'OK',
+                    'storage/logs' => 'OK',
                     'public_storage_symlink' => 'OK',
                 ]
             ]);
@@ -132,12 +140,76 @@ class SharedSyncTest extends TestCase
             ]);
     }
 
+    public function test_sharedsync_route_creates_missing_directories()
+    {
+        $token = 'test-token';
+        file_put_contents($this->tempDir . '/.sharedsync-token', $token);
+
+        $this->app['config']->set('sharedsync.build.artisan_cache', false);
+
+        $response = $this->withHeaders(['X-SharedSync-Token' => $token])
+            ->postJson('/sharedsync');
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'status' => 'success',
+                'checks' => [
+                    'bootstrap/cache' => 'Created',
+                    'storage/app/public' => 'Created',
+                    'storage/framework/cache' => 'Created',
+                    'storage/framework/sessions' => 'Created',
+                    'storage/framework/views' => 'Created',
+                    'storage/logs' => 'Created',
+                ]
+            ]);
+
+        $this->assertDirectoryExists($this->tempDir . '/bootstrap/cache');
+        $this->assertDirectoryExists($this->tempDir . '/storage/app/public');
+        $this->assertDirectoryExists($this->tempDir . '/storage/framework/cache');
+        $this->assertDirectoryExists($this->tempDir . '/storage/framework/sessions');
+        $this->assertDirectoryExists($this->tempDir . '/storage/framework/views');
+        $this->assertDirectoryExists($this->tempDir . '/storage/logs');
+    }
+
+    public function test_sharedsync_route_reports_not_writable_directories()
+    {
+        $token = 'test-token';
+        file_put_contents($this->tempDir . '/.sharedsync-token', $token);
+
+        // Create a directory and make it read-only
+        $path = $this->tempDir . '/storage/logs';
+        mkdir($path, 0777, true);
+        
+        // Ensure other directories exist so they don't report "Created"
+        mkdir($this->tempDir . '/bootstrap/cache', 0777, true);
+        mkdir($this->tempDir . '/storage/app/public', 0777, true);
+        mkdir($this->tempDir . '/storage/framework/cache', 0777, true);
+        mkdir($this->tempDir . '/storage/framework/sessions', 0777, true);
+        mkdir($this->tempDir . '/storage/framework/views', 0777, true);
+
+        chmod($path, 0555);
+
+        $this->app['config']->set('sharedsync.build.artisan_cache', false);
+
+        try {
+            $response = $this->withHeaders(['X-SharedSync-Token' => $token])
+                ->postJson('/sharedsync');
+
+            $response->assertStatus(500)
+                ->assertJsonStructure(['errors']);
+            
+            $this->assertStringContainsString('Directory is not writable', $response->json('errors')[0]);
+        } finally {
+            chmod($path, 0777); // Cleanup so tearDown can delete it
+        }
+    }
+
     public function test_deploy_command_calls_remote_checks()
     {
         Http::fake([
             'https://example.com/sharedsync' => Http::response([
                 'status' => 'success',
-                'checks' => ['storage' => 'OK']
+                'checks' => ['storage/app/public' => 'OK']
             ], 200),
         ]);
 
@@ -160,7 +232,7 @@ class SharedSyncTest extends TestCase
         $this->artisan('sharedsync:deploy')
             ->expectsOutput('Running remote checks...')
             ->expectsOutput('Remote checks passed successfully.')
-            ->expectsOutput('- storage: OK')
+            ->expectsOutput('- storage/app/public: OK')
             ->assertExitCode(0);
 
         // Verify token was uploaded and then deleted
@@ -173,7 +245,7 @@ class SharedSyncTest extends TestCase
         Http::fake([
             'https://example.com/sharedsync' => Http::response([
                 'status' => 'success',
-                'checks' => ['storage' => 'OK', 'bootstrap_cache' => 'OK']
+                'checks' => ['storage/app/public' => 'OK', 'bootstrap/cache' => 'OK']
             ], 200),
         ]);
 
@@ -191,8 +263,8 @@ class SharedSyncTest extends TestCase
         $this->artisan('sharedsync:check')
             ->expectsOutput('Running remote checks...')
             ->expectsOutput('Remote checks passed successfully.')
-            ->expectsOutput('- storage: OK')
-            ->expectsOutput('- bootstrap_cache: OK')
+            ->expectsOutput('- storage/app/public: OK')
+            ->expectsOutput('- bootstrap/cache: OK')
             ->assertExitCode(0);
 
         // Verify token was uploaded and then deleted

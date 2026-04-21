@@ -21,24 +21,32 @@ class SharedSyncController extends Controller
         $checks = [];
         $errors = [];
 
-        // Check storage directory
-        $storagePath = storage_path();
-        if (!File::exists($storagePath)) {
-            $errors[] = "Storage directory does not exist: $storagePath";
-        } elseif (!is_writable($storagePath)) {
-            $errors[] = "Storage directory is not writable: $storagePath";
-        } else {
-            $checks['storage'] = 'OK';
-        }
+        // Check and create required directories
+        $directories = [
+            'bootstrap/cache' => base_path('bootstrap/cache'),
+            'storage/app/public' => storage_path('app/public'),
+            'storage/framework/cache' => storage_path('framework/cache'),
+            'storage/framework/sessions' => storage_path('framework/sessions'),
+            'storage/framework/views' => storage_path('framework/views'),
+            'storage/logs' => storage_path('logs'),
+        ];
 
-        // Check bootstrap/cache directory
-        $cachePath = base_path('bootstrap/cache');
-        if (!File::exists($cachePath)) {
-            $errors[] = "Bootstrap cache directory does not exist: $cachePath";
-        } elseif (!is_writable($cachePath)) {
-            $errors[] = "Bootstrap cache directory is not writable: $cachePath";
-        } else {
-            $checks['bootstrap_cache'] = 'OK';
+        foreach ($directories as $label => $path) {
+            if (!File::exists($path)) {
+                try {
+                    File::makeDirectory($path, 0775, true);
+                    $checks[$label] = 'Created';
+                } catch (\Exception $e) {
+                    $errors[] = "Failed to create directory: $path. " . $e->getMessage();
+                    continue;
+                }
+            }
+
+            if (!is_writable($path)) {
+                $errors[] = "Directory is not writable: $path";
+            } else {
+                $checks[$label] = $checks[$label] ?? 'OK';
+            }
         }
 
         // Check public/storage symlink
