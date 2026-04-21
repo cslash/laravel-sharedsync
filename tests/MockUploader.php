@@ -34,6 +34,11 @@ class MockUploader implements UploaderInterface
         }
     }
 
+    public function put(string $remotePath, string $content): void
+    {
+        $this->uploadedFiles[] = $remotePath;
+    }
+
     public function delete(array $files): void
     {
         foreach ($files as $file) {

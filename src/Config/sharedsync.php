@@ -51,6 +51,7 @@ return [
     |
     */
     'build' => [
+        'composer' => true,
         'npm' => true,
         'artisan_cache' => true,
     ],
@@ -67,6 +68,7 @@ return [
         '.DS_Store',
         '.git',
         '.env',
+        '.idea',
         'node_modules',
         'tests',
         'storage/logs/*',
@@ -84,4 +86,14 @@ return [
     'options' => [
         'delete_removed' => true,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Deployment URL
+    |--------------------------------------------------------------------------
+    |
+    | The public URL of the deployed project. Used for post-deployment checks.
+    |
+    */
+    'url' => env('SHAREDSYNC_URL'),
 ];

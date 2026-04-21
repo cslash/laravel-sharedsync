@@ -67,6 +67,21 @@ class FtpUploader implements UploaderInterface
         }
     }
 
+    public function put(string $remotePath, string $content): void
+    {
+        $temp = tmpfile();
+        fwrite($temp, $content);
+        fseek($temp, 0);
+
+        $this->mkdir(dirname($remotePath));
+
+        $this->retry(function () use ($remotePath, $temp) {
+            return ftp_fput($this->connection, $remotePath, $temp, FTP_BINARY);
+        }, "Failed to put content to: {$remotePath}");
+
+        fclose($temp);
+    }
+
     public function delete(array $files): void
     {
         foreach ($files as $remotePath) {

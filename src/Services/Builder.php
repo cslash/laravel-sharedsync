@@ -28,7 +28,9 @@ class Builder
 
         $this->copyProjectToTemp();
 
-        $this->runStep(['composer', 'install', '--no-dev', '--optimize-autoloader'], 'Installing Composer dependencies...');
+        if ($this->config['composer'] ?? true) {
+            $this->runStep(['composer', 'install', '--no-dev', '--optimize-autoloader'], 'Installing Composer dependencies...');
+        }
 
         if ($this->config['npm'] ?? false) {
             $this->runStep(['npm', 'i'], "Installing NPM dependencies (npm i)...");

@@ -3,9 +3,12 @@
 namespace Cslash\SharedSync\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Cslash\SharedSync\Services\Builder;
 use Cslash\SharedSync\Services\FileScanner;
 use Cslash\SharedSync\Services\Manifest;
+use Cslash\SharedSync\Services\Uploader\UploaderInterface;
 
 class DeployCommand extends Command
 {
@@ -101,11 +104,14 @@ class DeployCommand extends Command
                 $uploader->delete($toDelete);
             }
 
-            $uploader->disconnect();
-
             // 5. Save Manifest
             $this->info('Updating manifest...');
             $manifest->save($allFiles);
+
+            // 6. Remote Checks
+            $this->runRemoteChecks($config, $uploader);
+
+            $uploader->disconnect();
 
             $duration = round(microtime(true) - $startTime, 2);
             $this->info("Deployment finished successfully in {$duration} seconds!");
@@ -118,6 +124,59 @@ class DeployCommand extends Command
         } finally {
             if ($builder) {
                 $builder->cleanup();
+            }
+        }
+    }
+
+    protected function runRemoteChecks(array $config, UploaderInterface $uploader): void
+    {
+        if (empty($config['url'])) {
+            $this->warn('No deployment URL configured. Skipping remote checks.');
+            return;
+        }
+
+        $this->info('Running remote checks...');
+
+        $token = Str::random(32);
+        $tokenFile = '.sharedsync-token';
+
+        try {
+            // Upload token
+            $uploader->put($tokenFile, $token);
+
+            // Call endpoint
+            $url = rtrim($config['url'], '/') . '/sharedsync';
+            $response = Http::withHeaders([
+                'X-SharedSync-Token' => $token,
+            ])->post($url);
+
+            if ($response->failed()) {
+                $this->error('Remote checks failed!');
+                $data = $response->json();
+                if (isset($data['errors'])) {
+                    foreach ($data['errors'] as $error) {
+                        $this->error("- $error");
+                    }
+                } else {
+                    $this->error($response->body());
+                }
+            } else {
+                $this->info('Remote checks passed successfully.');
+                $data = $response->json();
+                if (isset($data['checks'])) {
+                    foreach ($data['checks'] as $check => $status) {
+                        $this->line("- $check: <info>$status</info>");
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            $this->error('Failed to run remote checks: ' . $e->getMessage());
+        } finally {
+            // Delete token
+            try {
+                $uploader->delete([$tokenFile]);
+            } catch (\Exception $e) {
+                $this->warn('Failed to delete remote token file.');
             }
         }
     }

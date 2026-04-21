@@ -69,6 +69,15 @@ class SftpUploader implements UploaderInterface
         }
     }
 
+    public function put(string $remotePath, string $content): void
+    {
+        $this->mkdir(dirname($remotePath));
+
+        if (!$this->sftp->put($remotePath, $content)) {
+            throw new \RuntimeException("Failed to put content via SFTP to: {$remotePath}");
+        }
+    }
+
     public function delete(array $files): void
     {
         foreach ($files as $remotePath) {
