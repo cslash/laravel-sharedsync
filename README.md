@@ -16,6 +16,7 @@ shared hosting environments that only support FTP or SFTP
 - Configurable ignore rules (supports `.deployignore`).
 - Dry-run mode to see changes before uploading.
 - Selective deployment using the `--only` flag.
+- Post-deployment remote health checks (storage permissions, symlinks, etc.).
 
 ## Requirements
 
@@ -58,6 +59,7 @@ SFTP_USER=user
 SFTP_PASS=secret
 SFTP_ROOT=/var/www/html
 SFTP_PRIVATE_KEY=/path/to/id_rsa
+SHAREDSYNC_URL=https://example.com
 ```
 
 Example `config/sharedsync.php`:
@@ -83,6 +85,8 @@ Example `config/sharedsync.php`:
     'root' => env('SFTP_ROOT', '/'),
     'privateKey' => env('SFTP_PRIVATE_KEY'),
 ],
+
+'url' => env('SHAREDSYNC_URL'),
 ```
 
 ## Important Note on Local Build
@@ -155,6 +159,16 @@ Only upload files from specific directories:
 php artisan sharedsync:deploy --only=app,config,resources/views
 ```
 
+### Remote Health Checks
+
+Run health checks on the remote server to ensure permissions are correct and necessary symlinks exist:
+
+```bash
+php artisan sharedsync:check
+```
+
+These checks are also automatically performed at the end of every successful deployment.
+
 ## How It Works
 
 1. **Build**: Creates an isolated temporary directory, copies the project (excluding `vendor`, `node_modules`, `.git`), and runs `composer install --no-dev`, `npm ci` (or `npm install`), `npm run build`, and `php artisan *:cache` inside it.
@@ -163,7 +177,8 @@ php artisan sharedsync:deploy --only=app,config,resources/views
 4. **Upload**: Connects via FTP/SFTP and uploads new or modified files from the build directory.
 5. **Delete**: Removes files from the remote server that no longer exist in the build directory (if enabled).
 6. **Manifest**: Updates the local `.deploy-manifest.json` file.
-7. **Cleanup**: Deletes the temporary build directory.
+7. **Remote Checks**: Connects to the remote `/sharedsync` endpoint (secured with a temporary token) to verify storage permissions and ensure the `public/storage` symlink exists.
+8. **Cleanup**: Deletes the temporary build directory and the remote security token.
 
 ## License
 
