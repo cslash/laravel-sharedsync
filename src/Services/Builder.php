@@ -37,12 +37,6 @@ class Builder
             $this->runStep(['npm', 'run', 'build'], 'Building assets...');
         }
 
-        if ($this->config['artisan_cache'] ?? false) {
-            $this->runStep(['php', 'artisan', 'config:cache'], 'Caching configuration...');
-            $this->runStep(['php', 'artisan', 'route:cache'], 'Caching routes...');
-            $this->runStep(['php', 'artisan', 'view:cache'], 'Caching views...');
-        }
-
         return $this->buildPath;
     }
 

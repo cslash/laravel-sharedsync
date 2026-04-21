@@ -58,6 +58,8 @@ class SharedSyncTest extends TestCase
         // Create the symlink
         symlink($this->tempDir . '/storage/app/public', $this->tempDir . '/public/storage');
 
+        $this->app['config']->set('sharedsync.build.artisan_cache', false);
+
         $response = $this->withHeaders(['X-SharedSync-Token' => $token])
             ->postJson('/sharedsync');
 
@@ -82,8 +84,7 @@ class SharedSyncTest extends TestCase
         mkdir($this->tempDir . '/bootstrap/cache', 0777, true);
         mkdir($this->tempDir . '/public', 0777, true);
 
-        // We need to mock Artisan::call for storage:link or ensure it works in this environment
-        // Since we are in a test environment, let's just see if it works.
+        $this->app['config']->set('sharedsync.build.artisan_cache', false);
 
         $response = $this->withHeaders(['X-SharedSync-Token' => $token])
             ->postJson('/sharedsync');
@@ -93,6 +94,40 @@ class SharedSyncTest extends TestCase
                 'status' => 'success',
                 'checks' => [
                     'public_storage_symlink' => 'Created',
+                ]
+            ]);
+    }
+
+    public function test_sharedsync_route_caching_logic()
+    {
+        $token = 'test-token';
+        file_put_contents($this->tempDir . '/.sharedsync-token', $token);
+        mkdir($this->tempDir . '/storage/app/public', 0777, true);
+        mkdir($this->tempDir . '/bootstrap/cache', 0777, true);
+        mkdir($this->tempDir . '/public', 0777, true);
+        symlink($this->tempDir . '/storage/app/public', $this->tempDir . '/public/storage');
+
+        $this->app['config']->set('sharedsync.build.artisan_cache', true);
+
+        $artisanMock = \Mockery::mock(\Illuminate\Contracts\Console\Kernel::class);
+        $artisanMock->shouldReceive('call')->with('config:cache')->once()->andReturn(0);
+        $artisanMock->shouldReceive('call')->with('route:cache')->once()->andReturn(0);
+        $artisanMock->shouldReceive('call')->with('view:cache')->once()->andReturn(0);
+        $artisanMock->shouldReceive('call')->with('storage:link')->andReturn(0);
+        
+        $this->app->instance(\Illuminate\Contracts\Console\Kernel::class, $artisanMock);
+        $this->app->instance('artisan', $artisanMock);
+
+        $response = $this->withHeaders(['X-SharedSync-Token' => $token])
+            ->postJson('/sharedsync');
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'status' => 'success',
+                'checks' => [
+                    'config_cache' => 'OK',
+                    'route_cache' => 'OK',
+                    'view_cache' => 'OK',
                 ]
             ]);
     }

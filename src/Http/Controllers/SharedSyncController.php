@@ -54,6 +54,18 @@ class SharedSyncController extends Controller
             $checks['public_storage_symlink'] = 'OK';
         }
 
+        // Artisan caching
+        if (config('sharedsync.build.artisan_cache')) {
+            foreach (['config', 'route', 'view'] as $type) {
+                try {
+                    Artisan::call("$type:cache");
+                    $checks["{$type}_cache"] = 'OK';
+                } catch (\Exception $e) {
+                    $errors[] = "Failed to cache $type: " . $e->getMessage();
+                }
+            }
+        }
+
         if (!empty($errors)) {
             return response()->json([
                 'status' => 'error',
