@@ -171,7 +171,7 @@ These checks are also automatically performed at the end of every successful dep
 
 ## How It Works
 
-1. **Build**: Creates an isolated temporary directory, copies the project (excluding `vendor`, `node_modules`, `.git`), and runs `composer install --no-dev`, `npm ci` (or `npm install`), `npm run build`, and `php artisan *:cache` inside it.
+1. **Build**: Creates an isolated temporary directory, copies the project (excluding `vendor`, `node_modules`, `.git`), and runs `composer install --no-dev`, `npm install`, `npm run build`.
 2. **Scan**: Recursively scans the build directory, applying ignore rules.
 3. **Compare**: Compares the scanned files against the last deployment manifest.
 4. **Upload**: Connects via FTP/SFTP and uploads new or modified files from the build directory.
