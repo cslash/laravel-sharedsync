@@ -12,7 +12,7 @@ use Cslash\SharedSync\Services\Uploader\UploaderInterface;
 
 class DeployCommand extends Command
 {
-    use InteractsWithUploader;
+    use InteractsWithUploader, RunsRemoteChecks;
 
     protected $signature = 'sharedsync:deploy 
                             {--dry-run : Only show what would be uploaded}
@@ -128,56 +128,4 @@ class DeployCommand extends Command
         }
     }
 
-    protected function runRemoteChecks(array $config, UploaderInterface $uploader): void
-    {
-        if (empty($config['url'])) {
-            $this->warn('No deployment URL configured. Skipping remote checks.');
-            return;
-        }
-
-        $this->info('Running remote checks...');
-
-        $token = Str::random(32);
-        $tokenFile = '.sharedsync-token';
-
-        try {
-            // Upload token
-            $uploader->put($tokenFile, $token);
-
-            // Call endpoint
-            $url = rtrim($config['url'], '/') . '/sharedsync';
-            $response = Http::withHeaders([
-                'X-SharedSync-Token' => $token,
-            ])->post($url);
-
-            if ($response->failed()) {
-                $this->error('Remote checks failed!');
-                $data = $response->json();
-                if (isset($data['errors'])) {
-                    foreach ($data['errors'] as $error) {
-                        $this->error("- $error");
-                    }
-                } else {
-                    $this->error($response->body());
-                }
-            } else {
-                $this->info('Remote checks passed successfully.');
-                $data = $response->json();
-                if (isset($data['checks'])) {
-                    foreach ($data['checks'] as $check => $status) {
-                        $this->line("- $check: <info>$status</info>");
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            $this->error('Failed to run remote checks: ' . $e->getMessage());
-        } finally {
-            // Delete token
-            try {
-                $uploader->delete([$tokenFile]);
-            } catch (\Exception $e) {
-                $this->warn('Failed to delete remote token file.');
-            }
-        }
-    }
 }

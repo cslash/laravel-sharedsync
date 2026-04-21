@@ -7,6 +7,7 @@ use Cslash\SharedSync\Commands\DeployCommand;
 use Cslash\SharedSync\Commands\TestConnectionCommand;
 use Cslash\SharedSync\Commands\LsCommand;
 use Cslash\SharedSync\Commands\DiffCommand;
+use Cslash\SharedSync\Commands\CheckCommand;
 
 class SharedSyncServiceProvider extends ServiceProvider
 {
@@ -25,6 +26,7 @@ class SharedSyncServiceProvider extends ServiceProvider
                 TestConnectionCommand::class,
                 LsCommand::class,
                 DiffCommand::class,
+                CheckCommand::class,
             ]);
 
             $this->publishes([

@@ -132,4 +132,36 @@ class SharedSyncTest extends TestCase
         $this->assertContains('.sharedsync-token', $mockUploader->uploadedFiles);
         $this->assertContains('.sharedsync-token', $mockUploader->deletedFiles);
     }
+
+    public function test_check_command_runs_remote_checks()
+    {
+        Http::fake([
+            'https://example.com/sharedsync' => Http::response([
+                'status' => 'success',
+                'checks' => ['storage' => 'OK', 'bootstrap_cache' => 'OK']
+            ], 200),
+        ]);
+
+        $this->app['config']->set('sharedsync', [
+            'driver' => 'ftp',
+            'ftp' => ['host' => 'localhost', 'username' => 'user', 'password' => 'pass'],
+            'url' => 'https://example.com',
+        ]);
+
+        $mockUploader = new MockUploader();
+        $this->app->bind('sharedsync.uploader', function() use ($mockUploader) {
+            return $mockUploader;
+        });
+
+        $this->artisan('sharedsync:check')
+            ->expectsOutput('Running remote checks...')
+            ->expectsOutput('Remote checks passed successfully.')
+            ->expectsOutput('- storage: OK')
+            ->expectsOutput('- bootstrap_cache: OK')
+            ->assertExitCode(0);
+
+        // Verify token was uploaded and then deleted
+        $this->assertContains('.sharedsync-token', $mockUploader->uploadedFiles);
+        $this->assertContains('.sharedsync-token', $mockUploader->deletedFiles);
+    }
 }
