@@ -9,6 +9,16 @@ use Illuminate\Support\Facades\Artisan;
 
 class SharedSyncController extends Controller
 {
+    /**
+     * Available steps. Each step is mapped to a dedicated method that
+     * returns an array with 'checks' and 'errors' keys.
+     */
+    protected array $steps = [
+        'directories' => 'runDirectories',
+        'symlink'     => 'runSymlink',
+        'cache'       => 'runCache',
+    ];
+
     public function __invoke(Request $request)
     {
         $tokenFile = base_path('.sharedsync-token');
@@ -18,17 +28,67 @@ class SharedSyncController extends Controller
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 
+        $requestedStep = $request->input('step', 'all');
+
         $checks = [];
         $errors = [];
 
-        // Check and create required directories
+        if ($requestedStep === 'all') {
+            foreach (array_keys($this->steps) as $stepName) {
+                $result = $this->runStep($stepName);
+                $checks = array_merge($checks, $result['checks']);
+                $errors = array_merge($errors, $result['errors']);
+            }
+        } else {
+            if (!isset($this->steps[$requestedStep])) {
+                return response()->json([
+                    'status' => 'error',
+                    'errors' => ["Unknown step: {$requestedStep}"],
+                ], 400);
+            }
+
+            $result = $this->runStep($requestedStep);
+            $checks = $result['checks'];
+            $errors = $result['errors'];
+        }
+
+        if (!empty($errors)) {
+            return response()->json([
+                'status' => 'error',
+                'step'   => $requestedStep,
+                'checks' => $checks,
+                'errors' => $errors,
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'step'   => $requestedStep,
+            'checks' => $checks,
+        ]);
+    }
+
+    protected function runStep(string $stepName): array
+    {
+        $method = $this->steps[$stepName];
+        return $this->{$method}();
+    }
+
+    /**
+     * Ensure that all required runtime directories exist and are writable.
+     */
+    protected function runDirectories(): array
+    {
+        $checks = [];
+        $errors = [];
+
         $directories = [
-            'bootstrap/cache' => base_path('bootstrap/cache'),
-            'storage/app/public' => storage_path('app/public'),
-            'storage/framework/cache' => storage_path('framework/cache'),
-            'storage/framework/sessions' => storage_path('framework/sessions'),
-            'storage/framework/views' => storage_path('framework/views'),
-            'storage/logs' => storage_path('logs'),
+            'bootstrap/cache'             => base_path('bootstrap/cache'),
+            'storage/app/public'          => storage_path('app/public'),
+            'storage/framework/cache'     => storage_path('framework/cache'),
+            'storage/framework/sessions'  => storage_path('framework/sessions'),
+            'storage/framework/views'     => storage_path('framework/views'),
+            'storage/logs'                => storage_path('logs'),
         ];
 
         foreach ($directories as $label => $path) {
@@ -37,77 +97,90 @@ class SharedSyncController extends Controller
                     File::makeDirectory($path, 0775, true);
                     $checks[$label] = 'Created';
                 } catch (\Exception $e) {
-                    $errors[] = "Failed to create directory: $path. " . $e->getMessage();
+                    $errors[] = "Failed to create directory: {$path}. " . $e->getMessage();
                     continue;
                 }
             }
 
             if (!is_writable($path)) {
-                $errors[] = "Directory is not writable: $path";
+                $errors[] = "Directory is not writable: {$path}";
             } else {
                 $checks[$label] = $checks[$label] ?? 'OK';
             }
         }
 
-        // Check public/storage symlink
-//        $target = '../storage/app/public';
-//        $link = 'storage';
-//
-//        if (symlink($target, $link)) {
-//            echo 'Lien symbolique créé avec succès.';
-//        } else {
-//            echo 'Erreur lors de la création du lien symbolique.';
-//        }
+        return ['checks' => $checks, 'errors' => $errors];
+    }
 
-//        $publicStoragePath = public_path('storage');
-//        if (!File::exists($publicStoragePath)) {
-//            try {
-////                symlink(storage_path('app/public'), public_path('storage'));
-//                symlink('../storage/app/public', 'storage');
-//                $checks['public_storage_symlink'] = 'Created';
-//            } catch (\Exception $e) {
-//                $errors[] = "Failed to create public/storage symlink: " . $e->getMessage();
-//            }
-//        } else {
-//            $checks['public_storage_symlink'] = 'OK';
-//        }
+    /**
+     * Ensure the public/storage symlink to storage/app/public exists.
+     *
+     * - If a link or directory already exists at public/storage it's accepted as OK.
+     * - When created, the link is verified afterwards because some FTP-based
+     *   environments silently fail to create symlinks.
+     */
+    protected function runSymlink(): array
+    {
+        $checks = [];
+        $errors = [];
 
+        $target = storage_path('app/public');
+        $link   = public_path('storage');
 
-//        $publicStoragePath = public_path('storage');
-//        if (!File::exists($publicStoragePath)) {
-//            try {
-//                Artisan::call('storage:link');
-//                $checks['public_storage_symlink'] = 'Created';
-//            } catch (\Exception $e) {
-//                $errors[] = "Failed to create public/storage symlink: " . $e->getMessage();
-//            }
-//        } else {
-//            $checks['public_storage_symlink'] = 'OK';
-//        }
+        // Already present (either as a symlink or a regular directory): nothing to do.
+        if (is_link($link) || file_exists($link)) {
+            $checks['public_storage_symlink'] = 'OK';
+            return ['checks' => $checks, 'errors' => $errors];
+        }
 
-        // Artisan caching
-        if (config('sharedsync.build.artisan_cache')) {
-            foreach (['config', 'route', 'view'] as $type) {
-                try {
-                    Artisan::call("$type:cache");
-                    $checks["{$type}_cache"] = 'OK';
-                } catch (\Exception $e) {
-                    $errors[] = "Failed to cache $type: " . $e->getMessage();
-                }
+        // If the public/ directory itself is missing there's nothing we can link into.
+        $publicDir = dirname($link);
+        if (!is_dir($publicDir)) {
+            $checks['public_storage_symlink'] = 'Skipped (no public dir)';
+            return ['checks' => $checks, 'errors' => $errors];
+        }
+
+        try {
+            // Use a relative target so the link remains valid if paths move.
+            $relativeTarget = '../storage/app/public';
+            @symlink($relativeTarget, $link);
+        } catch (\Exception $e) {
+            $errors[] = 'Failed to create public/storage symlink: ' . $e->getMessage();
+            return ['checks' => $checks, 'errors' => $errors];
+        }
+
+        // Verify creation: FTP-created links sometimes don't actually appear.
+        clearstatcache(true, $link);
+        if (is_link($link) || file_exists($link)) {
+            $checks['public_storage_symlink'] = 'Created';
+        } else {
+            $errors[] = "public/storage symlink was not created (target: {$target}).";
+        }
+
+        return ['checks' => $checks, 'errors' => $errors];
+    }
+
+    /**
+     * Run Artisan cache commands when enabled in the configuration.
+     */
+    protected function runCache(): array
+    {
+        $checks = [];
+        $errors = [];
+
+        if (!config('sharedsync.build.artisan_cache')) {
+            return ['checks' => $checks, 'errors' => $errors];
+        }
+
+        foreach (['config', 'route', 'view'] as $type) {
+            try {
+                Artisan::call("{$type}:cache");
+                $checks["{$type}_cache"] = 'OK';
+            } catch (\Exception $e) {
+                $errors[] = "Failed to cache {$type}: " . $e->getMessage();
             }
         }
 
-        if (!empty($errors)) {
-            return response()->json([
-                'status' => 'error',
-                'checks' => $checks,
-                'errors' => $errors,
-            ], 500);
-        }
-
-        return response()->json([
-            'status' => 'success',
-            'checks' => $checks,
-        ]);
+        return ['checks' => $checks, 'errors' => $errors];
     }
 }
