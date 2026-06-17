@@ -109,6 +109,50 @@ class DeploymentTest extends TestCase
         $this->assertNotContains('test.bak', $paths);
     }
 
+    public function test_file_scanner_ignores_with_trailing_slash()
+    {
+        mkdir($this->tempDir . '/vendor_slash');
+        file_put_contents($this->tempDir . '/vendor_slash/autoload.php', '<?php');
+        file_put_contents($this->tempDir . '/keep.txt', 'keep');
+
+        // Note the trailing slash
+        $scanner = new FileScanner($this->tempDir, ['vendor_slash/']);
+        $files = $scanner->scan();
+
+        $paths = array_column($files, 'path');
+        $this->assertNotContains('vendor_slash/autoload.php', $paths);
+        $this->assertContains('keep.txt', $paths);
+    }
+
+    public function test_file_scanner_ignores_with_leading_slash()
+    {
+        mkdir($this->tempDir . '/vendor_leading');
+        file_put_contents($this->tempDir . '/vendor_leading/autoload.php', '<?php');
+
+        // Note the leading slash
+        $scanner = new FileScanner($this->tempDir, ['/vendor_leading']);
+        $files = $scanner->scan();
+
+        $paths = array_column($files, 'path');
+        $this->assertNotContains('vendor_leading/autoload.php', $paths);
+    }
+
+    public function test_file_scanner_complex_wildcard_patterns()
+    {
+        mkdir($this->tempDir . '/logs');
+        file_put_contents($this->tempDir . '/logs/error.log', 'error');
+        file_put_contents($this->tempDir . '/logs/info.txt', 'info');
+        file_put_contents($this->tempDir . '/test.log', 'test');
+
+        $scanner = new FileScanner($this->tempDir, ['logs/*.log']);
+        $files = $scanner->scan();
+
+        $paths = array_column($files, 'path');
+        $this->assertNotContains('logs/error.log', $paths);
+        $this->assertContains('logs/info.txt', $paths);
+        $this->assertContains('test.log', $paths);
+    }
+
     public function test_manifest_save_and_load()
     {
         $manifest = new Manifest($this->tempDir);

@@ -54,27 +54,19 @@ class FileScanner
             $ignore = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $ignore);
             
             // Exact match
-            if ($path === $ignore) {
+            if ($path === $ignore || $path === ltrim($ignore, DIRECTORY_SEPARATOR)) {
                 return true;
             }
 
             // Directory match (e.g., node_modules)
-            if (str_starts_with($path, $ignore . DIRECTORY_SEPARATOR)) {
+            $dirIgnore = rtrim(ltrim($ignore, DIRECTORY_SEPARATOR), DIRECTORY_SEPARATOR);
+            if (str_starts_with($path, $dirIgnore . DIRECTORY_SEPARATOR)) {
                 return true;
             }
 
-            // Wildcard match (simple version: ends with *)
-            if (str_ends_with($ignore, '*')) {
-                $prefix = rtrim($ignore, '*');
-                if (str_starts_with($path, $prefix)) {
-                    return true;
-                }
-            }
-            
-            // Wildcard match (start with *)
-            if (str_starts_with($ignore, '*')) {
-                $suffix = ltrim($ignore, '*');
-                if (str_ends_with($path, $suffix)) {
+            // Wildcard match
+            if (str_contains($ignore, '*')) {
+                if (fnmatch($ignore, $path) || fnmatch(ltrim($ignore, DIRECTORY_SEPARATOR), $path)) {
                     return true;
                 }
             }

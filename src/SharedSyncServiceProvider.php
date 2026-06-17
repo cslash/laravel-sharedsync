@@ -8,12 +8,13 @@ use Cslash\SharedSync\Commands\TestConnectionCommand;
 use Cslash\SharedSync\Commands\LsCommand;
 use Cslash\SharedSync\Commands\DiffCommand;
 use Cslash\SharedSync\Commands\CheckCommand;
+use Cslash\SharedSync\Commands\MigrateCommand;
 
 class SharedSyncServiceProvider extends ServiceProvider
 {
     public function register()
     {
-        $this->mergeConfigFrom(__DIR__ . '/Config/sharedsync.php', 'sharedsync');
+        $this->mergeConfigFrom(__DIR__ . '/../config/sharedsync.php', 'sharedsync');
     }
 
     public function boot()
@@ -27,10 +28,11 @@ class SharedSyncServiceProvider extends ServiceProvider
                 LsCommand::class,
                 DiffCommand::class,
                 CheckCommand::class,
+                MigrateCommand::class,
             ]);
 
             $this->publishes([
-                __DIR__ . '/Config/sharedsync.php' => config_path('sharedsync.php'),
+                __DIR__ . '/../config/sharedsync.php' => config_path('sharedsync.php'),
             ], 'sharedsync-config');
         }
     }
