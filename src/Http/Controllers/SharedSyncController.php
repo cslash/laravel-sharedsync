@@ -50,17 +50,40 @@ class SharedSyncController extends Controller
         }
 
         // Check public/storage symlink
-        $publicStoragePath = public_path('storage');
-        if (!File::exists($publicStoragePath)) {
-            try {
-                Artisan::call('storage:link');
-                $checks['public_storage_symlink'] = 'Created';
-            } catch (\Exception $e) {
-                $errors[] = "Failed to create public/storage symlink: " . $e->getMessage();
-            }
-        } else {
-            $checks['public_storage_symlink'] = 'OK';
-        }
+//        $target = '../storage/app/public';
+//        $link = 'storage';
+//
+//        if (symlink($target, $link)) {
+//            echo 'Lien symbolique créé avec succès.';
+//        } else {
+//            echo 'Erreur lors de la création du lien symbolique.';
+//        }
+
+//        $publicStoragePath = public_path('storage');
+//        if (!File::exists($publicStoragePath)) {
+//            try {
+////                symlink(storage_path('app/public'), public_path('storage'));
+//                symlink('../storage/app/public', 'storage');
+//                $checks['public_storage_symlink'] = 'Created';
+//            } catch (\Exception $e) {
+//                $errors[] = "Failed to create public/storage symlink: " . $e->getMessage();
+//            }
+//        } else {
+//            $checks['public_storage_symlink'] = 'OK';
+//        }
+
+
+//        $publicStoragePath = public_path('storage');
+//        if (!File::exists($publicStoragePath)) {
+//            try {
+//                Artisan::call('storage:link');
+//                $checks['public_storage_symlink'] = 'Created';
+//            } catch (\Exception $e) {
+//                $errors[] = "Failed to create public/storage symlink: " . $e->getMessage();
+//            }
+//        } else {
+//            $checks['public_storage_symlink'] = 'OK';
+//        }
 
         // Artisan caching
         if (config('sharedsync.build.artisan_cache')) {

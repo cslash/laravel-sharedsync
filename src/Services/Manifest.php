@@ -21,7 +21,7 @@ class Manifest
         return json_decode($content, true) ?: [];
     }
 
-    public function save(array $files): void
+    public function save(array $files, array $meta = []): void
     {
         $data = [];
         foreach ($files as $file) {
@@ -31,7 +31,17 @@ class Manifest
             ];
         }
 
+        if (!empty($meta)) {
+            $data['__meta__'] = $meta;
+        }
+
         file_put_contents($this->filePath, json_encode($data, JSON_PRETTY_PRINT));
+    }
+
+    public function getMeta(): array
+    {
+        $data = $this->load();
+        return $data['__meta__'] ?? [];
     }
 
     public function compare(array $currentFiles, array $lastManifest): array
@@ -55,6 +65,9 @@ class Manifest
         }
 
         foreach ($lastManifest as $path => $data) {
+            if ($path === '__meta__') {
+                continue;
+            }
             if (!in_array($path, $currentPaths)) {
                 $toDelete[] = $path;
             }

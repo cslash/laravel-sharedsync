@@ -173,6 +173,16 @@ php artisan sharedsync:check
 
 These checks are also automatically performed at the end of every successful deployment.
 
+### Remote Database Migrations
+
+Run database migrations on the remote server:
+
+```bash
+php artisan sharedsync:migrate
+```
+
+This command uses a temporary signed URL to securely trigger the migration on the remote server. Note that for this to work, both your local and remote environments must share the same `APP_KEY`.
+
 ## How It Works
 
 1. **Build**: Creates an isolated temporary directory, copies the project (excluding `vendor`, `node_modules`, `.git`), and runs `composer install --no-dev`, `npm install`, `npm run build`.
