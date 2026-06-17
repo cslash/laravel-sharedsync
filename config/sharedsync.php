@@ -80,6 +80,7 @@ return [
         'storage/logs/*',
         'storage/media-library/*',
         'public/storage',
+        'public/hot',
         '.deploy-manifest.json',
         '.deployignore',
         'vendor/bin',

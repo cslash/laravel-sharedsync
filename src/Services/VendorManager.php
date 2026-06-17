@@ -6,6 +6,7 @@ use Cslash\SharedSync\Services\Uploader\UploaderInterface;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Process\Process;
 
 /**
  * Manages remote vendor deployment outside of Laravel.

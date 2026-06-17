@@ -22,17 +22,6 @@ $EXPECTED_TOKEN = '__SHAREDSYNC_TOKEN__';
 
 $provided = $_GET['token'] ?? $_POST['token'] ?? '';
 
-// Build a precise diagnostic so misconfigurations can be identified quickly.
-if ($EXPECTED_TOKEN === '__SHAREDSYNC_TOKEN__') {
-    http_response_code(500);
-    echo json_encode([
-        'status' => 'error',
-        'reason' => 'token_placeholder_not_replaced',
-        'message' => 'The stub was uploaded without its token placeholder being replaced. Re-deploy the vendor manager stub.',
-    ]);
-    exit;
-}
-
 if (!is_string($provided) || $provided === '') {
     http_response_code(401);
     // Help debugging: list which transport carried (or didn't carry) a token.
