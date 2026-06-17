@@ -21,9 +21,56 @@ header('Content-Type: application/json');
 $EXPECTED_TOKEN = '__SHAREDSYNC_TOKEN__';
 
 $provided = $_GET['token'] ?? $_POST['token'] ?? '';
-if (!is_string($provided) || $EXPECTED_TOKEN === '__SHAREDSYNC_TOKEN__' || !hash_equals($EXPECTED_TOKEN, $provided)) {
+
+// Build a precise diagnostic so misconfigurations can be identified quickly.
+if ($EXPECTED_TOKEN === '__SHAREDSYNC_TOKEN__') {
+    http_response_code(500);
+    echo json_encode([
+        'status' => 'error',
+        'reason' => 'token_placeholder_not_replaced',
+        'message' => 'The stub was uploaded without its token placeholder being replaced. Re-deploy the vendor manager stub.',
+    ]);
+    exit;
+}
+
+if (!is_string($provided) || $provided === '') {
     http_response_code(401);
-    echo json_encode(['status' => 'error', 'message' => 'Invalid or missing token.']);
+    // Help debugging: list which transport carried (or didn't carry) a token.
+    $sources = [
+        'GET'  => isset($_GET['token']) ? 'present' : 'missing',
+        'POST' => isset($_POST['token']) ? 'present' : 'missing',
+    ];
+    echo json_encode([
+        'status' => 'error',
+        'reason' => 'token_missing',
+        'message' => 'No token was provided in the request. Expected ?token=... in the query string.',
+        'sources' => $sources,
+        'query_string' => $_SERVER['QUERY_STRING'] ?? '',
+    ]);
+    exit;
+}
+
+if (strlen($provided) !== strlen($EXPECTED_TOKEN)) {
+    http_response_code(401);
+    echo json_encode([
+        'status' => 'error',
+        'reason' => 'token_length_mismatch',
+        'message' => sprintf(
+            'Provided token length (%d) does not match expected length (%d). The token may have been truncated or altered in transit.',
+            strlen($provided),
+            strlen($EXPECTED_TOKEN)
+        ),
+    ]);
+    exit;
+}
+
+if (!hash_equals($EXPECTED_TOKEN, $provided)) {
+    http_response_code(401);
+    echo json_encode([
+        'status' => 'error',
+        'reason' => 'token_mismatch',
+        'message' => 'Provided token does not match the expected token embedded in the stub.',
+    ]);
     exit;
 }
 

@@ -132,6 +132,19 @@ class VendorManager
             if ($response->failed() || (is_array($data) && ($data['status'] ?? null) === 'error')) {
                 $msg = is_array($data) ? ($data['message'] ?? $response->body()) : $response->body();
                 $this->output->writeln('<error>Remote vendor action failed: ' . $msg . '</error>');
+                if (is_array($data)) {
+                    if (!empty($data['reason'])) {
+                        $this->output->writeln('<comment>Reason: ' . $data['reason'] . '</comment>');
+                    }
+                    if (!empty($data['sources'])) {
+                        $this->output->writeln('<comment>Token sources: ' . json_encode($data['sources']) . '</comment>');
+                    }
+                    if (isset($data['query_string'])) {
+                        $this->output->writeln('<comment>Server saw query string: "' . $data['query_string'] . '"</comment>');
+                    }
+                }
+                $this->output->writeln('<comment>Called URL: ' . $url . '</comment>');
+                $this->output->writeln('<comment>HTTP status: ' . $response->status() . '</comment>');
                 return false;
             }
 

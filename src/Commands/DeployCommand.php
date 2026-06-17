@@ -18,6 +18,7 @@ class DeployCommand extends Command
                             {--force : Ignore manifest and upload everything}
                             {--only= : Only upload specific folders (comma separated)}
                             {--skip-vendor : Do not build or deploy the vendor directory}
+                            {--force-vendor : Force rebuild and redeployment of the vendor directory even if composer.lock has not changed}
                             {--remote-composer : Skip uploading vendor and run composer install on the remote server instead}';
 
     protected $description = 'Deploy Laravel project via FTP/SFTP';
@@ -45,7 +46,7 @@ class DeployCommand extends Command
         $composerLockPath = base_path('composer.lock');
         $composerLockHash = file_exists($composerLockPath) ? md5_file($composerLockPath) : null;
         $composerLockChanged = ($previousMeta['composer_lock'] ?? null) !== $composerLockHash;
-        $buildVendor = !$skipVendor && ($composerLockChanged || $this->option('force'));
+        $buildVendor = !$skipVendor && ($composerLockChanged || $this->option('force') || $this->option('force-vendor'));
 
         try {
             // 1. Build
