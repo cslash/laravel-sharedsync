@@ -139,8 +139,18 @@ class DeployCommand extends Command
             }
 
             if (!empty($toDelete)) {
-                $this->info('Deleting removed files...');
-                $uploader->delete($toDelete);
+                $this->warn(sprintf('The following %d file(s) will be deleted from the remote server:', count($toDelete)));
+                foreach ($toDelete as $deletePath) {
+                    $this->line(' - ' . $deletePath);
+                }
+
+                if (!$this->confirm('Do you want to proceed with deleting these files?', false)) {
+                    $this->info('Skipping deletion of removed files.');
+                    $toDelete = [];
+                } else {
+                    $this->info('Deleting removed files...');
+                    $uploader->delete($toDelete);
+                }
             }
 
             // 5. Trigger remote composer install (if requested)

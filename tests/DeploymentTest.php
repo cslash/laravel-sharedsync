@@ -307,6 +307,7 @@ class DeploymentTest extends TestCase
         file_put_contents($this->tempDir . '/new.txt', 'new');
 
         $this->artisan('sharedsync:deploy')
+            ->expectsConfirmation('Do you want to proceed with deleting these files?', 'yes')
             ->assertExitCode(0);
 
         $this->assertContains('new.txt', $mockUploader->uploadedFiles);
