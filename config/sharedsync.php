@@ -79,6 +79,7 @@ return [
         'storage/framework/testing',
         'storage/logs/*',
         'storage/media-library/*',
+        'public/storage',
         '.deploy-manifest.json',
         '.deployignore',
         'vendor/bin',

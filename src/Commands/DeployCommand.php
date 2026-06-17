@@ -3,12 +3,11 @@
 namespace Cslash\SharedSync\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 use Cslash\SharedSync\Services\Builder;
 use Cslash\SharedSync\Services\FileScanner;
 use Cslash\SharedSync\Services\Manifest;
 use Cslash\SharedSync\Services\Uploader\UploaderInterface;
+use Cslash\SharedSync\Services\VendorManager;
 
 class DeployCommand extends Command
 {
@@ -68,11 +67,9 @@ class DeployCommand extends Command
 
             // 2. Scan
             $this->info('Scanning files...');
-            $ignoreList = $config['ignore'];
-            if ($skipVendor || !$composerLockChanged) {
-                // Don't scan/upload vendor when it's not needed
-                $ignoreList = array_merge($ignoreList, ['vendor']);
-            }
+            // Vendor is always handled separately (zip + extract or remote composer)
+            // through VendorManager, so exclude it from the regular file scan/upload.
+            $ignoreList = array_merge($config['ignore'], ['vendor']);
             $scanner = new FileScanner($buildPath, $ignoreList);
             $allFiles = $scanner->scan();
 
@@ -93,16 +90,13 @@ class DeployCommand extends Command
             $lastManifestData = $this->option('force') ? [] : $manifest->load();
             unset($lastManifestData['__meta__']);
 
-            // Preserve previous vendor manifest entries when we skipped scanning the vendor
-            // directory, so those entries are not flagged for deletion and remain in the
-            // manifest after save.
+            // Vendor is never scanned by the regular flow, so preserve any previous
+            // vendor manifest entries to avoid flagging them for deletion.
             $preservedVendorEntries = [];
-            if ($skipVendor || !$composerLockChanged) {
-                foreach ($lastManifestData as $p => $meta) {
-                    if ($p === 'vendor' || str_starts_with($p, 'vendor/')) {
-                        $preservedVendorEntries[$p] = $meta;
-                        unset($lastManifestData[$p]);
-                    }
+            foreach ($lastManifestData as $p => $meta) {
+                if ($p === 'vendor' || str_starts_with($p, 'vendor/')) {
+                    $preservedVendorEntries[$p] = $meta;
+                    unset($lastManifestData[$p]);
                 }
             }
 
@@ -153,9 +147,12 @@ class DeployCommand extends Command
                 }
             }
 
-            // 5. Trigger remote composer install (if requested)
+            // 5. Vendor deployment (handled outside Laravel, via uploaded PHP stub).
             if ($this->option('remote-composer')) {
-                $this->runRemoteComposer($config);
+                $this->runRemoteVendor($config, $uploader, 'composer');
+            } elseif ($buildVendor) {
+                $localVendorDir = $buildPath . DIRECTORY_SEPARATOR . 'vendor';
+                $this->runRemoteVendor($config, $uploader, 'extract', $localVendorDir);
             }
 
             // 6. Save Manifest
@@ -193,33 +190,32 @@ class DeployCommand extends Command
     }
 
     /**
-     * Trigger a remote `composer install` via the package's signed-URL endpoint.
+     * Deploy the vendor directory (or trigger remote composer install) via a
+     * one-shot PHP stub uploaded to public/. The stub runs entirely outside
+     * Laravel so it works even when vendor/ is missing or incomplete.
      */
-    protected function runRemoteComposer(array $config): void
+    protected function runRemoteVendor(array $config, UploaderInterface $uploader, string $mode, ?string $localVendorDir = null): void
     {
         if (empty($config['url'])) {
-            $this->warn('No deployment URL configured. Cannot run composer remotely.');
+            $this->warn('No deployment URL configured. Cannot manage vendor remotely.');
             return;
         }
 
-        $this->info('Running composer install on the remote server...');
+        $manager = new VendorManager($uploader, $config['url'], $this->output);
 
-        try {
-            $url = rtrim($config['url'], '/') . '/sharedsync/composer';
-            $response = Http::timeout(600)->get($url);
-
-            if ($response->failed()) {
-                $this->error('Remote composer install failed: ' . $response->body());
-                return;
+        if ($mode === 'composer') {
+            $this->info('Running composer install on the remote server...');
+            if ($manager->runComposer()) {
+                $this->info('Remote composer install completed.');
             }
+            return;
+        }
 
-            $data = $response->json();
-            if (isset($data['output'])) {
-                $this->line($data['output']);
+        if ($mode === 'extract' && $localVendorDir !== null) {
+            $this->info('Deploying vendor directory (zip + remote extraction)...');
+            if ($manager->deployVendor($localVendorDir)) {
+                $this->info('Remote vendor deployment completed.');
             }
-            $this->info('Remote composer install completed.');
-        } catch (\Exception $e) {
-            $this->error('Failed to run remote composer install: ' . $e->getMessage());
         }
     }
 
