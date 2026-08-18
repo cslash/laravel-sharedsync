@@ -75,7 +75,7 @@ class VendorManager
     {
         $this->output->writeln('<info>Building vendor locally...</info>');
 
-        $process = new Process(['composer', 'install', '--no-dev', '--optimize-autoloader']);
+        $process = new Process(['composer', 'install', '--optimize-autoloader']);
         $process->setWorkingDirectory($projectPath);
         $process->setTimeout(600);
         $process->run(function ($type, $buffer) {

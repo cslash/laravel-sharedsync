@@ -34,12 +34,16 @@ class VendorCommand extends Command
             
             // Create the remote token file
             $uploader->connect();
-            $uploader->put('.sharedsync-token', $token);
-            $uploader->disconnect();
+            try {
+                $uploader->put('.sharedsync-token', $token);
+            } finally {
+                $uploader->disconnect();
+            }
             
             $vendorManager->setToken($token);
 
             try {
+                $uploader->connect();
                 if ($vendorManager->deployVendor(base_path('vendor'))) {
                     $this->info('Vendor deployed successfully.');
                     return 0;
@@ -47,7 +51,6 @@ class VendorCommand extends Command
             } finally {
                 // Cleanup: remove the remote token file
                 try {
-                    $uploader->connect();
                     $uploader->delete(['.sharedsync-token']);
                     $uploader->disconnect();
                 } catch (\Exception $e) {

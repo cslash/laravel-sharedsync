@@ -40,8 +40,11 @@ class DeployCommand extends Command
         // 1. Pre-deployment (Token)
         if (!$this->option('dry-run')) {
             $uploader->connect();
-            $uploader->put('.sharedsync-token', $token);
-            $uploader->disconnect();
+            try {
+                $uploader->put('.sharedsync-token', $token);
+            } finally {
+                $uploader->disconnect();
+            }
         }
  
         $buildPath = base_path();
@@ -61,6 +64,10 @@ class DeployCommand extends Command
             $uploader = $this->getUploader($config);
             $vendorManager = new VendorManager($uploader, $config['url'] ?? '', $this->output);
             $vendorManager->setToken($token);
+
+            if (!$this->option('dry-run')) {
+                $uploader->connect();
+            }
 
             // 1. Build
             if (!$this->option('dry-run')) {
