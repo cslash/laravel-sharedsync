@@ -60,7 +60,7 @@ class DeployCommand extends Command
                         $this->info('composer.lock unchanged; skipping composer install in build.');
                     }
                 }
-                $builder = new Builder($buildConfig, base_path(), $this->output);
+                $builder = new Builder($buildConfig, base_path(), $this->output, $config['ignore'] ?? []);
                 $buildPath = $builder->build();
             } else {
                 $this->warn('Skipping build in dry-run mode.');

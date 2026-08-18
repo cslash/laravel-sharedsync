@@ -11,12 +11,14 @@ class Builder
     protected $config;
     protected $basePath;
     protected $buildPath;
+    protected $ignores;
 
-    public function __construct(array $config, string $basePath, OutputInterface $output)
+    public function __construct(array $config, string $basePath, OutputInterface $output, array $ignores = [])
     {
         $this->config = $config;
         $this->basePath = rtrim($basePath, DIRECTORY_SEPARATOR);
         $this->output = $output;
+        $this->ignores = $ignores;
     }
 
     /**
@@ -61,14 +63,18 @@ class Builder
             \RecursiveIteratorIterator::SELF_FIRST
         );
 
-        $excludes = ['.git', 'vendor', 'node_modules'];
+        $excludes = array_merge(['.git', 'vendor', 'node_modules'], $this->ignores);
 
         foreach ($iterator as $item) {
             $relativePath = $this->getRelativePath($item->getPathname());
 
             // Check if it should be excluded
             foreach ($excludes as $exclude) {
-                if ($relativePath === $exclude || str_starts_with($relativePath, $exclude . DIRECTORY_SEPARATOR)) {
+                $exclude = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $exclude);
+
+                if ($relativePath === $exclude || 
+                    str_starts_with($relativePath, $exclude . DIRECTORY_SEPARATOR) ||
+                    fnmatch($exclude, $relativePath)) {
                     continue 2;
                 }
             }
