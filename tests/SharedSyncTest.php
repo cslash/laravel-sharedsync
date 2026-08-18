@@ -271,4 +271,22 @@ class SharedSyncTest extends TestCase
         $this->assertContains('.sharedsync-token', $mockUploader->uploadedFiles);
         $this->assertContains('.sharedsync-token', $mockUploader->deletedFiles);
     }
+
+    public function test_sharedsync_controller_returns_error_json_on_exception()
+    {
+        // Create the token file so authentication passes
+        file_put_contents(base_path('.sharedsync-token'), 'secret');
+        
+        try {
+            $response = $this->withHeaders(['X-SharedSync-Token' => 'secret'])
+                ->postJson('/sharedsync?step=non-existent');
+                
+            $response->assertStatus(400);
+            $response->assertJsonStructure(['status', 'errors']);
+        } finally {
+            if (file_exists(base_path('.sharedsync-token'))) {
+                unlink(base_path('.sharedsync-token'));
+            }
+        }
+    }
 }

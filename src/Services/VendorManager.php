@@ -170,10 +170,17 @@ class VendorManager
                 ->withHeaders(['X-SharedSync-Token' => $this->token])
                 ->get($url, ['zip' => $remoteZipName]);
 
-            $data = $response->json();
-            
-            if ($response->failed() || (is_array($data) && ($data['status'] ?? null) === 'error')) {
-                $msg = is_array($data) ? ($data['error'] ?? $data['message'] ?? $response->body()) : $response->body();
+            if ($response->failed()) {
+                $body = $response->body();
+                try {
+                    $data = $response->json();
+                    $msg = $data['error'] ?? $data['message'] ?? $body;
+                } catch (\Exception $e) {
+                    // Not JSON, probably HTML. Strip tags to keep it readable.
+                    $msg = strip_tags($body);
+                    $msg = Str::limit(trim($msg), 500);
+                }
+                
                 $this->output->writeln('<error>Remote vendor extraction failed: ' . $msg . '</error>');
                 return false;
             }

@@ -21,44 +21,51 @@ class SharedSyncController extends Controller
 
     public function __invoke(Request $request)
     {
-        $requestedStep = $request->input('step', 'all');
+        try {
+            $requestedStep = $request->input('step', 'all');
 
-        $checks = [];
-        $errors = [];
+            $checks = [];
+            $errors = [];
 
-        if ($requestedStep === 'all') {
-            foreach (array_keys($this->steps) as $stepName) {
-                $result = $this->runStep($stepName);
-                $checks = array_merge($checks, $result['checks']);
-                $errors = array_merge($errors, $result['errors']);
+            if ($requestedStep === 'all') {
+                foreach (array_keys($this->steps) as $stepName) {
+                    $result = $this->runStep($stepName);
+                    $checks = array_merge($checks, $result['checks']);
+                    $errors = array_merge($errors, $result['errors']);
+                }
+            } else {
+                if (!isset($this->steps[$requestedStep])) {
+                    return response()->json([
+                        'status' => 'error',
+                        'errors' => ["Unknown step: {$requestedStep}"],
+                    ], 400);
+                }
+
+                $result = $this->runStep($requestedStep);
+                $checks = $result['checks'];
+                $errors = $result['errors'];
             }
-        } else {
-            if (!isset($this->steps[$requestedStep])) {
+
+            if (!empty($errors)) {
                 return response()->json([
                     'status' => 'error',
-                    'errors' => ["Unknown step: {$requestedStep}"],
-                ], 400);
+                    'step'   => $requestedStep,
+                    'checks' => $checks,
+                    'errors' => $errors,
+                ], 500);
             }
 
-            $result = $this->runStep($requestedStep);
-            $checks = $result['checks'];
-            $errors = $result['errors'];
-        }
-
-        if (!empty($errors)) {
             return response()->json([
-                'status' => 'error',
+                'status' => 'success',
                 'step'   => $requestedStep,
                 'checks' => $checks,
-                'errors' => $errors,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'error' => 'Remote sync failed: ' . $e->getMessage(),
             ], 500);
         }
-
-        return response()->json([
-            'status' => 'success',
-            'step'   => $requestedStep,
-            'checks' => $checks,
-        ]);
     }
 
     protected function runStep(string $stepName): array
