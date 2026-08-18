@@ -105,8 +105,8 @@ class VendorManager
         }
 
         $zipFile = tempnam(sys_get_temp_dir(), 'sharedsync-vendor-') . '.zip';
-        $unique = bin2hex(random_bytes(8));
-        $remoteZipName = "sharedsync-vendor-{$unique}.zip";
+        $remoteZipName = "vendor-{$this->token}.zip";
+        $remoteStubName = "sharedsync-vendor-{$this->token}.php";
 
         try {
             $this->output->writeln('<info>Zipping vendor directory...</info>');
@@ -115,8 +115,23 @@ class VendorManager
             $this->output->writeln('<info>Uploading vendor zip...</info>');
             $this->uploader->put($remoteZipName, file_get_contents($zipFile));
 
+            $this->output->writeln('<info>Uploading extraction stub...</info>');
+            $stubContent = file_get_contents(__DIR__ . '/../../resources/stubs/vendor-extractor.stub');
+            $stubContent = str_replace('__SHAREDSYNC_TOKEN__', $this->token, $stubContent);
+            $this->uploader->put($remoteStubName, $stubContent);
+
             $this->output->writeln('<info>Triggering remote vendor extraction...</info>');
-            return $this->callRemoteExtraction($remoteZipName);
+            $success = $this->callRemoteExtraction($remoteStubName, $remoteZipName);
+
+            // Clean up remote extraction files (always attempt if they were uploaded)
+            $this->output->writeln('<info>Cleaning up remote extraction files...</info>');
+            try {
+                $this->uploader->delete([$remoteStubName, $remoteZipName]);
+            } catch (\Exception $e) {
+                $this->output->writeln('<comment>Warning: Could not delete remote extraction files: ' . $e->getMessage() . '</comment>');
+            }
+
+            return $success;
 
         } finally {
             if (file_exists($zipFile)) {
@@ -156,19 +171,22 @@ class VendorManager
         $zip->close();
     }
 
-    protected function callRemoteExtraction(string $remoteZipName): bool
+    protected function callRemoteExtraction(string $remoteStubName, string $remoteZipName): bool
     {
         if (empty($this->baseUrl)) {
-            $this->output->writeln('<error>No deployment URL configured; cannot reach vendor controller.</error>');
+            $this->output->writeln('<error>No deployment URL configured; cannot reach extraction stub.</error>');
             return false;
         }
 
-        $url = $this->baseUrl . '/sharedsync/vendor';
+        $url = $this->baseUrl . '/' . $remoteStubName;
 
         try {
             $response = Http::timeout(600)
-                ->withHeaders(['X-SharedSync-Token' => $this->token])
-                ->get($url, ['zip' => $remoteZipName]);
+                ->get($url, [
+                    'token' => $this->token,
+                    'action' => 'extract',
+                    'zip' => $remoteZipName,
+                ]);
 
             if ($response->failed()) {
                 $body = $response->body();
@@ -187,7 +205,7 @@ class VendorManager
 
             return true;
         } catch (\Exception $e) {
-            $this->output->writeln('<error>Failed to call vendor controller: ' . $e->getMessage() . '</error>');
+            $this->output->writeln('<error>Failed to call extraction stub: ' . $e->getMessage() . '</error>');
             return false;
         }
     }
