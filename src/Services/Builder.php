@@ -30,6 +30,8 @@ class Builder
 
         $this->copyProjectToTemp();
 
+        $this->ensureRequiredDirectoriesExist();
+
         if ($this->config['composer'] ?? true) {
             $this->runStep(['composer', 'install', '--no-dev', '--optimize-autoloader'], 'Installing Composer dependencies...');
         }
@@ -95,6 +97,24 @@ class Builder
     {
         $path = str_replace($this->basePath, '', $fullPath);
         return ltrim($path, DIRECTORY_SEPARATOR);
+    }
+
+    protected function ensureRequiredDirectoriesExist(): void
+    {
+        $directories = [
+            'bootstrap/cache',
+            'storage/framework/cache',
+            'storage/framework/sessions',
+            'storage/framework/views',
+            'storage/logs',
+        ];
+
+        foreach ($directories as $dir) {
+            $path = $this->buildPath . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $dir);
+            if (!is_dir($path)) {
+                mkdir($path, 0777, true);
+            }
+        }
     }
 
     public function cleanup(): void
