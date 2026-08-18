@@ -32,10 +32,6 @@ class Builder
 
         $this->ensureRequiredDirectoriesExist();
 
-        if ($this->config['composer'] ?? true) {
-            $this->runStep(['composer', 'install', '--no-dev', '--optimize-autoloader'], 'Installing Composer dependencies...');
-        }
-
         if ($this->config['npm'] ?? false) {
             $this->runStep(['npm', 'i'], "Installing NPM dependencies (npm i)...");
             $this->runStep(['npm', 'run', 'build'], 'Building assets...');

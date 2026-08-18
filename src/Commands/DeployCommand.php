@@ -18,8 +18,7 @@ class DeployCommand extends Command
                             {--force : Ignore manifest and upload everything}
                             {--only= : Only upload specific folders (comma separated)}
                             {--skip-vendor : Do not build or deploy the vendor directory}
-                            {--force-vendor : Force rebuild and redeployment of the vendor directory even if composer.lock has not changed}
-                            {--remote-composer : Skip uploading vendor and run composer install on the remote server instead}';
+                            {--force-vendor : Force rebuild and redeployment of the vendor directory even if composer.lock has not changed}';
 
     protected $description = 'Deploy Laravel project via FTP/SFTP';
 
@@ -34,11 +33,21 @@ class DeployCommand extends Command
         }
 
         $this->info('Starting SharedSync Deployment...');
-
+ 
+        $token = \Illuminate\Support\Str::random(48);
+        $uploader = $this->getUploader($config);
+ 
+        // 1. Pre-deployment (Token)
+        if (!$this->option('dry-run')) {
+            $uploader->connect();
+            $uploader->put('.sharedsync-token', $token);
+            $uploader->disconnect();
+        }
+ 
         $buildPath = base_path();
         $builder = null;
 
-        $skipVendor = $this->option('skip-vendor') || $this->option('remote-composer');
+        $skipVendor = $this->option('skip-vendor');
 
         // Decide whether vendor needs building/deploying based on composer.lock changes
         $manifest = new Manifest(base_path());
@@ -49,19 +58,30 @@ class DeployCommand extends Command
         $buildVendor = !$skipVendor && ($composerLockChanged || $this->option('force') || $this->option('force-vendor'));
 
         try {
+            $uploader = $this->getUploader($config);
+            $vendorManager = new VendorManager($uploader, $config['url'] ?? '', $this->output);
+            $vendorManager->setToken($token);
+
             // 1. Build
             if (!$this->option('dry-run')) {
                 $buildConfig = $config['build'];
-                if (!$buildVendor) {
-                    $buildConfig['composer'] = false;
+                $builder = new Builder($buildConfig, base_path(), $this->output, $config['ignore'] ?? []);
+                $buildPath = $builder->build();
+
+                if ($buildVendor) {
+                    if (file_exists($buildPath . DIRECTORY_SEPARATOR . 'composer.lock')) {
+                        $vendorManager->buildLocal($buildPath);
+                    } else {
+                        $this->warn('composer.lock not found in build path; skipping vendor build.');
+                        $buildVendor = false;
+                    }
+                } else {
                     if ($skipVendor) {
-                        $this->info('Vendor deployment is disabled (--skip-vendor or --remote-composer). Skipping composer install in build.');
+                        $this->info('Vendor deployment is disabled (--skip-vendor). Skipping composer install in build.');
                     } else {
                         $this->info('composer.lock unchanged; skipping composer install in build.');
                     }
                 }
-                $builder = new Builder($buildConfig, base_path(), $this->output, $config['ignore'] ?? []);
-                $buildPath = $builder->build();
             } else {
                 $this->warn('Skipping build in dry-run mode.');
             }
@@ -125,7 +145,7 @@ class DeployCommand extends Command
             }
 
             // 4. Upload
-            $uploader = $this->getUploader($config, $buildPath);
+            $uploader->setBuildPath($buildPath);
             $uploader->connect();
 
             if (!empty($toUpload)) {
@@ -148,12 +168,10 @@ class DeployCommand extends Command
                 }
             }
 
-            // 5. Vendor deployment (handled outside Laravel, via uploaded PHP stub).
-            if ($this->option('remote-composer')) {
-                $this->runRemoteVendor($config, $uploader, 'composer');
-            } elseif ($buildVendor) {
+            // 5. Vendor deployment
+            if ($buildVendor) {
                 $localVendorDir = $buildPath . DIRECTORY_SEPARATOR . 'vendor';
-                $this->runRemoteVendor($config, $uploader, 'extract', $localVendorDir);
+                $vendorManager->deployVendor($localVendorDir);
             }
 
             // 6. Save Manifest
@@ -174,48 +192,37 @@ class DeployCommand extends Command
             $this->runRemoteChecks($config, $uploader);
 
             $uploader->disconnect();
-
+ 
+            // Cleanup: remove the remote token file
+            if (!$this->option('dry-run')) {
+                $uploader->connect();
+                $uploader->delete(['.sharedsync-token']);
+                $uploader->disconnect();
+            }
+ 
             $duration = round(microtime(true) - $startTime, 2);
             $this->info("Deployment finished successfully in {$duration} seconds!");
 
             return 0;
 
         } catch (\Exception $e) {
+            // Cleanup: remove the remote token file even on failure
+            if (!$this->option('dry-run')) {
+                try {
+                    $uploader = $this->getUploader($config);
+                    $uploader->connect();
+                    $uploader->delete(['.sharedsync-token']);
+                    $uploader->disconnect();
+                } catch (\Exception $cleanupEx) {
+                    // Ignore cleanup errors
+                }
+            }
+ 
             $this->error("Deployment failed: " . $e->getMessage());
             return 1;
         } finally {
             if ($builder) {
                 $builder->cleanup();
-            }
-        }
-    }
-
-    /**
-     * Deploy the vendor directory (or trigger remote composer install) via a
-     * one-shot PHP stub uploaded to public/. The stub runs entirely outside
-     * Laravel so it works even when vendor/ is missing or incomplete.
-     */
-    protected function runRemoteVendor(array $config, UploaderInterface $uploader, string $mode, ?string $localVendorDir = null): void
-    {
-        if (empty($config['url'])) {
-            $this->warn('No deployment URL configured. Cannot manage vendor remotely.');
-            return;
-        }
-
-        $manager = new VendorManager($uploader, $config['url'], $this->output);
-
-        if ($mode === 'composer') {
-            $this->info('Running composer install on the remote server...');
-            if ($manager->runComposer()) {
-                $this->info('Remote composer install completed.');
-            }
-            return;
-        }
-
-        if ($mode === 'extract' && $localVendorDir !== null) {
-            $this->info('Deploying vendor directory (zip + remote extraction)...');
-            if ($manager->deployVendor($localVendorDir)) {
-                $this->info('Remote vendor deployment completed.');
             }
         }
     }

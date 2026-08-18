@@ -24,32 +24,69 @@ use Symfony\Component\Process\Process;
 class VendorManager
 {
     protected UploaderInterface $uploader;
-    protected string $baseUrl;
     protected OutputInterface $output;
-
-    /** Remote paths, relative to the deploy root. */
-    protected string $remoteStubPath;
-    protected string $remoteZipPath;
-    /** Public URL paths used to reach the stub. */
-    protected string $publicStubUrlPath;
-    protected string $publicZipName;
-    protected string $token;
+    protected string $baseUrl;
+    protected ?string $token = null;
 
     public function __construct(UploaderInterface $uploader, string $baseUrl, OutputInterface $output)
     {
         $this->uploader = $uploader;
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->output = $output;
+    }
 
-        $this->token = Str::random(48);
-        $unique = bin2hex(random_bytes(8));
-        $stubName = "sharedsync-vendor-{$unique}.php";
-        $zipName = "sharedsync-vendor-{$unique}.zip";
+    /**
+     * Set the authentication token for the current session.
+     */
+    public function setToken(string $token): void
+    {
+        $this->token = $token;
+    }
 
-        $this->remoteStubPath = 'public/' . $stubName;
-        $this->remoteZipPath = 'public/' . $zipName;
-        $this->publicStubUrlPath = $stubName;
-        $this->publicZipName = $zipName;
+    /**
+     * Get installed packages from composer.lock
+     */
+    public function getInstalledPackages(string $path): array
+    {
+        $lockFile = rtrim($path, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'composer.lock';
+        
+        if (!file_exists($lockFile)) {
+            $this->output->writeln('<comment>composer.lock not found at: ' . $lockFile . '</comment>');
+            return [];
+        }
+
+        $data = json_decode(file_get_contents($lockFile), true);
+        $packages = [];
+
+        if (isset($data['packages'])) {
+            foreach ($data['packages'] as $package) {
+                $packages[$package['name']] = $package['version'];
+            }
+        }
+
+        ksort($packages);
+        return $packages;
+    }
+
+    /**
+     * Build vendor locally in a temporary directory
+     */
+    public function buildLocal(string $projectPath): string
+    {
+        $this->output->writeln('<info>Building vendor locally...</info>');
+
+        $process = new Process(['composer', 'install', '--no-dev', '--optimize-autoloader']);
+        $process->setWorkingDirectory($projectPath);
+        $process->setTimeout(600);
+        $process->run(function ($type, $buffer) {
+            $this->output->write($buffer);
+        });
+
+        if (!$process->isSuccessful()) {
+            throw new \RuntimeException('Local composer install failed: ' . $process->getErrorOutput());
+        }
+
+        return $projectPath . DIRECTORY_SEPARATOR . 'vendor';
     }
 
     /**
@@ -62,106 +99,29 @@ class VendorManager
             return false;
         }
 
+        if (!$this->token) {
+            $this->output->writeln("<error>No token set for vendor deployment.</error>");
+            return false;
+        }
+
         $zipFile = tempnam(sys_get_temp_dir(), 'sharedsync-vendor-') . '.zip';
+        $unique = bin2hex(random_bytes(8));
+        $remoteZipName = "sharedsync-vendor-{$unique}.zip";
+
         try {
             $this->output->writeln('<info>Zipping vendor directory...</info>');
             $this->zipDirectory($localVendorDir, $zipFile, 'vendor');
 
-            $this->uploadStub();
-            $this->uploadZip($zipFile);
+            $this->output->writeln('<info>Uploading vendor zip...</info>');
+            $this->uploader->put($remoteZipName, file_get_contents($zipFile));
 
             $this->output->writeln('<info>Triggering remote vendor extraction...</info>');
-            $ok = $this->callStub('extract', ['zip' => $this->publicZipName]);
+            return $this->callRemoteExtraction($remoteZipName);
 
-            return $ok;
         } finally {
             if (file_exists($zipFile)) {
                 @unlink($zipFile);
             }
-            $this->cleanupRemote();
-        }
-    }
-
-    /**
-     * Run `composer install` on the remote server through the stub.
-     */
-    public function runComposer(): bool
-    {
-        try {
-            $this->uploadStub();
-            $this->output->writeln('<info>Triggering remote composer install...</info>');
-            return $this->callStub('composer');
-        } finally {
-            $this->cleanupRemote();
-        }
-    }
-
-    protected function uploadStub(): void
-    {
-        $stubTemplate = file_get_contents(__DIR__ . '/../../resources/stubs/vendor-manager.php.stub');
-        $stubContent = str_replace('__SHAREDSYNC_TOKEN__', $this->token, $stubTemplate);
-
-        $this->output->writeln('<info>Uploading vendor manager stub...</info>');
-        $this->uploader->put($this->remoteStubPath, $stubContent);
-    }
-
-    protected function uploadZip(string $localZipFile): void
-    {
-        $this->output->writeln('<info>Uploading vendor zip...</info>');
-        // Use put() so we can stream a file from outside the deploy build path.
-        $this->uploader->put($this->remoteZipPath, file_get_contents($localZipFile));
-    }
-
-    protected function callStub(string $action, array $query = []): bool
-    {
-        if (empty($this->baseUrl)) {
-            $this->output->writeln('<error>No deployment URL configured; cannot reach vendor manager.</error>');
-            return false;
-        }
-
-        $url = $this->baseUrl . '/' . $this->publicStubUrlPath;
-        $query = array_merge(['action' => $action, 'token' => $this->token], $query);
-
-        try {
-            $response = Http::timeout(600)->get($url, $query);
-
-            $data = $response->json();
-            if (is_array($data) && isset($data['output']) && $data['output'] !== '') {
-                $this->output->writeln($data['output']);
-            }
-
-            if ($response->failed() || (is_array($data) && ($data['status'] ?? null) === 'error')) {
-                $msg = is_array($data) ? ($data['message'] ?? $response->body()) : $response->body();
-                $this->output->writeln('<error>Remote vendor action failed: ' . $msg . '</error>');
-                if (is_array($data)) {
-                    if (!empty($data['reason'])) {
-                        $this->output->writeln('<comment>Reason: ' . $data['reason'] . '</comment>');
-                    }
-                    if (!empty($data['sources'])) {
-                        $this->output->writeln('<comment>Token sources: ' . json_encode($data['sources']) . '</comment>');
-                    }
-                    if (isset($data['query_string'])) {
-                        $this->output->writeln('<comment>Server saw query string: "' . $data['query_string'] . '"</comment>');
-                    }
-                }
-                $this->output->writeln('<comment>Called URL: ' . $url . '</comment>');
-                $this->output->writeln('<comment>HTTP status: ' . $response->status() . '</comment>');
-                return false;
-            }
-
-            return true;
-        } catch (\Exception $e) {
-            $this->output->writeln('<error>Failed to call vendor manager: ' . $e->getMessage() . '</error>');
-            return false;
-        }
-    }
-
-    protected function cleanupRemote(): void
-    {
-        try {
-            $this->uploader->delete([$this->remoteStubPath, $this->remoteZipPath]);
-        } catch (\Exception $e) {
-            $this->output->writeln('<comment>Failed to remove vendor manager files: ' . $e->getMessage() . '</comment>');
         }
     }
 
@@ -194,5 +154,34 @@ class VendorManager
         }
 
         $zip->close();
+    }
+
+    protected function callRemoteExtraction(string $remoteZipName): bool
+    {
+        if (empty($this->baseUrl)) {
+            $this->output->writeln('<error>No deployment URL configured; cannot reach vendor controller.</error>');
+            return false;
+        }
+
+        $url = $this->baseUrl . '/sharedsync/vendor';
+
+        try {
+            $response = Http::timeout(600)
+                ->withHeaders(['X-SharedSync-Token' => $this->token])
+                ->get($url, ['zip' => $remoteZipName]);
+
+            $data = $response->json();
+            
+            if ($response->failed() || (is_array($data) && ($data['status'] ?? null) === 'error')) {
+                $msg = is_array($data) ? ($data['error'] ?? $data['message'] ?? $response->body()) : $response->body();
+                $this->output->writeln('<error>Remote vendor extraction failed: ' . $msg . '</error>');
+                return false;
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            $this->output->writeln('<error>Failed to call vendor controller: ' . $e->getMessage() . '</error>');
+            return false;
+        }
     }
 }

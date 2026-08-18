@@ -21,13 +21,6 @@ class SharedSyncController extends Controller
 
     public function __invoke(Request $request)
     {
-        $tokenFile = base_path('.sharedsync-token');
-        $token = File::exists($tokenFile) ? trim(File::get($tokenFile)) : null;
-
-        if (!$token || $request->header('X-SharedSync-Token') !== $token) {
-            return response()->json(['error' => 'Unauthorized'], 401);
-        }
-
         $requestedStep = $request->input('step', 'all');
 
         $checks = [];

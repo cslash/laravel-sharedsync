@@ -13,4 +13,5 @@ interface UploaderInterface
     public function is_dir(string $path): bool;
     public function chdir(string $path): void;
     public function mkdir(string $path): void;
+    public function setBuildPath(string $path): void;
 }

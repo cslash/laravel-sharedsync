@@ -9,6 +9,7 @@ use Cslash\SharedSync\Commands\LsCommand;
 use Cslash\SharedSync\Commands\DiffCommand;
 use Cslash\SharedSync\Commands\CheckCommand;
 use Cslash\SharedSync\Commands\MigrateCommand;
+use Cslash\SharedSync\Commands\VendorCommand;
 
 class SharedSyncServiceProvider extends ServiceProvider
 {
@@ -29,6 +30,7 @@ class SharedSyncServiceProvider extends ServiceProvider
                 DiffCommand::class,
                 CheckCommand::class,
                 MigrateCommand::class,
+                VendorCommand::class,
             ]);
 
             $this->publishes([

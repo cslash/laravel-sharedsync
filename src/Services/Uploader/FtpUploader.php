@@ -171,6 +171,11 @@ class FtpUploader implements UploaderInterface
         }
     }
 
+    public function setBuildPath(string $path): void
+    {
+        $this->basePath = rtrim($path, DIRECTORY_SEPARATOR);
+    }
+
     protected function retry(callable $callback, string $errorMessage, int $attempts = 3): void
     {
         for ($i = 0; $i < $attempts; $i++) {

@@ -145,4 +145,9 @@ class SftpUploader implements UploaderInterface
             }
         }
     }
+
+    public function setBuildPath(string $path): void
+    {
+        $this->basePath = rtrim($path, DIRECTORY_SEPARATOR);
+    }
 }

@@ -72,4 +72,9 @@ class MockUploader implements UploaderInterface
             $this->createdDirectories[] = $path;
         }
     }
+
+    public function setBuildPath(string $path): void
+    {
+        //
+    }
 }
