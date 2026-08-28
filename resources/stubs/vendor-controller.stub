@@ -1,0 +1,101 @@
+<?php
+/**
+ * SharedSync Vendor Controller - Self-contained Webhook.
+ *
+ * Uploaded to public/ on vendor deployment and called once via POST.
+ * Extracts the vendor archive and removes the zip file upon completion.
+ */
+
+header('Content-Type: application/json');
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['status' => 'error', 'message' => 'Method not allowed. Only POST requests are accepted.']);
+    exit;
+}
+
+$projectRoot = dirname(__DIR__);
+$archiveName = '__SHAREDSYNC_ARCHIVE_NAME__';
+$archivePath = $projectRoot . DIRECTORY_SEPARATOR . $archiveName;
+
+if (!file_exists($archivePath) && file_exists(__DIR__ . DIRECTORY_SEPARATOR . $archiveName)) {
+    $archivePath = __DIR__ . DIRECTORY_SEPARATOR . $archiveName;
+}
+
+try {
+    if (!class_exists('ZipArchive')) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'ZipArchive extension not available on the server.']);
+        return;
+    }
+
+    if (!file_exists($archivePath)) {
+        http_response_code(404);
+        echo json_encode(['status' => 'error', 'message' => "Zip file not found: {$archiveName}"]);
+        return;
+    }
+
+    $vendorDir = $projectRoot . DIRECTORY_SEPARATOR . 'vendor';
+
+    if (file_exists($vendorDir) || is_dir($vendorDir) || is_link($vendorDir)) {
+        sharedsync_rrmdir($vendorDir);
+    }
+
+    $zip = new ZipArchive();
+    $opened = $zip->open($archivePath);
+    if ($opened !== true) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => "Failed to open zip archive (code {$opened})."]);
+        return;
+    }
+
+    $extracted = $zip->extractTo($projectRoot);
+    $zip->close();
+
+    if (!$extracted) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => 'Failed to extract zip archive.']);
+        return;
+    }
+
+    http_response_code(200);
+    echo json_encode(['status' => 'success', 'message' => 'Vendor archive extracted successfully.']);
+
+} catch (\Throwable $e) {
+    http_response_code(500);
+    echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+} finally {
+    if (file_exists($archivePath)) {
+        @unlink($archivePath);
+    }
+}
+
+function sharedsync_rrmdir(string $dir): void
+{
+    if (is_link($dir)) {
+        @unlink($dir);
+        return;
+    }
+    if (!is_dir($dir)) {
+        if (file_exists($dir)) {
+            @unlink($dir);
+        }
+        return;
+    }
+    $items = scandir($dir);
+    if ($items === false) {
+        return;
+    }
+    foreach ($items as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+        $path = $dir . DIRECTORY_SEPARATOR . $item;
+        if (is_link($path) || !is_dir($path)) {
+            @unlink($path);
+        } else {
+            sharedsync_rrmdir($path);
+        }
+    }
+    @rmdir($dir);
+}
