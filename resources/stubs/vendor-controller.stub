@@ -14,13 +14,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     exit;
 }
 
-$projectRoot = dirname(__DIR__);
+$projectRoot = dirname(__DIR__, 1);
 $archiveName = '__SHAREDSYNC_ARCHIVE_NAME__';
-$archivePath = $projectRoot . DIRECTORY_SEPARATOR . $archiveName;
-
-if (!file_exists($archivePath) && file_exists(__DIR__ . DIRECTORY_SEPARATOR . $archiveName)) {
-    $archivePath = __DIR__ . DIRECTORY_SEPARATOR . $archiveName;
-}
+$archivePath = $projectRoot . DIRECTORY_SEPARATOR . 'storage' . DIRECTORY_SEPARATOR . 'sharedsync' . DIRECTORY_SEPARATOR . $archiveName;
 
 try {
     if (!class_exists('ZipArchive')) {
@@ -31,14 +27,15 @@ try {
 
     if (!file_exists($archivePath)) {
         http_response_code(404);
-        echo json_encode(['status' => 'error', 'message' => "Zip file not found: {$archiveName}"]);
+        echo json_encode(['status' => 'error', 'message' => "Zip file not found: {$archivePath}"]);
         return;
     }
 
     $vendorDir = $projectRoot . DIRECTORY_SEPARATOR . 'vendor';
+    $vendorDirSaved = $vendorDir . '-' . date('YmdHis');
 
     if (file_exists($vendorDir) || is_dir($vendorDir) || is_link($vendorDir)) {
-        sharedsync_rrmdir($vendorDir);
+        rename($vendorDir, $vendorDirSaved);
     }
 
     $zip = new ZipArchive();
@@ -58,6 +55,9 @@ try {
         return;
     }
 
+    // remove old vendor directory
+    rrmdir($vendorDirSaved);
+
     http_response_code(200);
     echo json_encode(['status' => 'success', 'message' => 'Vendor archive extracted successfully.']);
 
@@ -65,12 +65,13 @@ try {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 } finally {
+    // cleanup
     if (file_exists($archivePath)) {
         @unlink($archivePath);
     }
 }
 
-function sharedsync_rrmdir(string $dir): void
+function rrmdir(string $dir): void
 {
     if (is_link($dir)) {
         @unlink($dir);
@@ -94,7 +95,7 @@ function sharedsync_rrmdir(string $dir): void
         if (is_link($path) || !is_dir($path)) {
             @unlink($path);
         } else {
-            sharedsync_rrmdir($path);
+            rrmdir($path);
         }
     }
     @rmdir($dir);

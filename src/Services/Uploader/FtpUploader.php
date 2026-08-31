@@ -52,7 +52,7 @@ class FtpUploader implements UploaderInterface
 
     public function isConnected(): bool
     {
-        return $this->connection !== false;
+        return !!$this->connection;
     }
 
     public function upload(array $files): void
