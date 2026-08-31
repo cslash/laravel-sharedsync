@@ -5,6 +5,7 @@ namespace Cslash\SharedSync\Services\Uploader;
 interface UploaderInterface
 {
     public function connect(): void;
+    public function isConnected(): bool;
     public function upload(array $files): void;
     public function put(string $remotePath, string $content): void;
     public function delete(array $files): void;

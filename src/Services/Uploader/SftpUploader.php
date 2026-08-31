@@ -52,6 +52,11 @@ class SftpUploader implements UploaderInterface
         }
     }
 
+    public function isConnected(): bool
+    {
+        return $this->sftp !== false;
+    }
+
     public function upload(array $files): void
     {
         foreach ($files as $file) {

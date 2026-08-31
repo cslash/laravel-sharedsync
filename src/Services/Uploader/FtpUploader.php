@@ -50,6 +50,11 @@ class FtpUploader implements UploaderInterface
         $this->chdir($this->remoteRoot);
     }
 
+    public function isConnected(): bool
+    {
+        return $this->connection !== false;
+    }
+
     public function upload(array $files): void
     {
         foreach ($files as $file) {
