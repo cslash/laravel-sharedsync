@@ -48,25 +48,31 @@ class FileScanner
         return ltrim($path, DIRECTORY_SEPARATOR);
     }
 
-    protected function shouldIgnore(string $path): bool
+    public function shouldIgnore(string $path): bool
     {
+        $normalizedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+
         foreach ($this->ignores as $ignore) {
+            if ($ignore === '') {
+                continue;
+            }
+
             $ignore = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $ignore);
-            
+
             // Exact match
-            if ($path === $ignore || $path === ltrim($ignore, DIRECTORY_SEPARATOR)) {
+            if ($normalizedPath === $ignore || $normalizedPath === ltrim($ignore, DIRECTORY_SEPARATOR) || $normalizedPath === rtrim($ignore, DIRECTORY_SEPARATOR)) {
                 return true;
             }
 
-            // Directory match (e.g., node_modules)
+            // Directory match (e.g., node_modules, tests/)
             $dirIgnore = rtrim(ltrim($ignore, DIRECTORY_SEPARATOR), DIRECTORY_SEPARATOR);
-            if (str_starts_with($path, $dirIgnore . DIRECTORY_SEPARATOR)) {
+            if ($dirIgnore !== '' && (str_starts_with($normalizedPath, $dirIgnore . DIRECTORY_SEPARATOR) || $normalizedPath === $dirIgnore)) {
                 return true;
             }
 
             // Wildcard match
             if (str_contains($ignore, '*')) {
-                if (fnmatch($ignore, $path) || fnmatch(ltrim($ignore, DIRECTORY_SEPARATOR), $path)) {
+                if (fnmatch($ignore, $normalizedPath) || fnmatch(ltrim($ignore, DIRECTORY_SEPARATOR), $normalizedPath)) {
                     return true;
                 }
             }

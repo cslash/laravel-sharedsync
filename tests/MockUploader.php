@@ -18,6 +18,11 @@ class MockUploader implements UploaderInterface
         $this->connected = true;
     }
 
+    public function isConnected(): bool
+    {
+        return $this->connected;
+    }
+
     public function upload(array $files): void
     {
         if (empty($files)) {

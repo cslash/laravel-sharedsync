@@ -31,7 +31,7 @@ class VendorManager
     protected ?string $tmpPath = null;
 
     protected ?string $archiveName;
-    protected ?string $archiveFile;
+    protected ?string $localArchiveFile;
     protected ?string $remoteArchiveFile;
     protected ?string $controllerStub;
     protected ?string $remoteControllerScript;
@@ -56,7 +56,7 @@ class VendorManager
         }
 
         $this->archiveName = 'vendor-archive-' . bin2hex(random_bytes(8)) . '.zip';
-        $this->archiveFile = $this->tmpPath . DIRECTORY_SEPARATOR . $this->archiveName;
+        $this->localArchiveFile = $this->tmpPath . DIRECTORY_SEPARATOR . $this->archiveName;
         $this->remoteArchiveFile = 'storage/sharedsync/' . $this->archiveName;
 
         $this->controllerStub = dirname(__DIR__, 2) . '/resources/stubs/vendor-controller.stub';
@@ -69,7 +69,7 @@ class VendorManager
      */
     public function list(string $composerFile = 'composer.lock'): array
     {
-        $lockFile = $this->path . DIRECTORY_SEPARATOR . $composerFile;
+        $lockFile = base_path() . DIRECTORY_SEPARATOR . $composerFile;
 
         $packages = [];
 
@@ -220,8 +220,8 @@ class VendorManager
         }
 
         $zip = new \ZipArchive();
-        if ($zip->open($this->archiveFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
-            throw new \RuntimeException("Could not create zip file: {$this->archiveFile}");
+        if ($zip->open($this->localArchiveFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException("Could not create zip file: {$this->localArchiveFile}");
         }
 
         $iterator = new \RecursiveIteratorIterator(
@@ -247,11 +247,11 @@ class VendorManager
     public function upload()
     {
 
-        if (!file_exists($this->archiveFile)) {
+        if (!file_exists($this->localArchiveFile)) {
             throw new \RuntimeException("Local vendor archive not found. Run compress first.");
         }
 
-        $this->uploader->put($this->remoteArchiveFile, file_get_contents($this->archiveFile));
+        $this->uploader->put($this->remoteArchiveFile, file_get_contents($this->localArchiveFile));
     }
 
     /**

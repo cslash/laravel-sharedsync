@@ -55,12 +55,23 @@ class FtpUploader implements UploaderInterface
         return !!$this->connection;
     }
 
+    public function getRemotePath(string $path): string
+    {
+        $remoteRoot = $this->remoteRoot ?? (rtrim($this->config['root'] ?? '/', '/') . '/');
+
+        if ($path === rtrim($remoteRoot, '/') || str_starts_with($path, $remoteRoot)) {
+            return $path;
+        }
+
+        return $remoteRoot . ltrim($path, '/');
+    }
+
     public function upload(array $files): void
     {
         foreach ($files as $file) {
             $relativePath = ltrim($file['path'], '/');
             $localPath = $this->basePath . DIRECTORY_SEPARATOR . $relativePath;
-            $remotePath = $this->remoteRoot . $relativePath;
+            $remotePath = $this->getRemotePath($relativePath);
 
             $this->output->writeln("Uploading: {$relativePath}", OutputInterface::VERBOSITY_VERBOSE);
 
@@ -74,6 +85,7 @@ class FtpUploader implements UploaderInterface
 
     public function put(string $remotePath, string $content): void
     {
+        $remotePath = $this->getRemotePath($remotePath);
         $temp = tmpfile();
         fwrite($temp, $content);
         fseek($temp, 0);
@@ -90,6 +102,7 @@ class FtpUploader implements UploaderInterface
     public function delete(array $files): void
     {
         foreach ($files as $remotePath) {
+            $remotePath = $this->getRemotePath($remotePath);
             $this->output->writeln("Deleting: {$remotePath}", OutputInterface::VERBOSITY_VERBOSE);
             @ftp_delete($this->connection, $remotePath);
         }
@@ -118,6 +131,8 @@ class FtpUploader implements UploaderInterface
         if ($path === '.' || $path === '/' || empty($path)) {
             return true;
         }
+
+        $path = $this->getRemotePath($path);
 
         if (isset($this->dirCache[$path])) {
             return true;
@@ -155,6 +170,8 @@ class FtpUploader implements UploaderInterface
         if ($path === '.' || $path === '/' || empty($path)) {
             return;
         }
+
+        $path = $this->getRemotePath($path);
 
         $parts = explode('/', str_replace('\\', '/', $path));
         $current = '';

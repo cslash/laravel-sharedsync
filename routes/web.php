@@ -7,5 +7,6 @@ use Cslash\SharedSync\Http\Middleware\AuthenticateSharedSync;
 
 Route::middleware(AuthenticateSharedSync::class)->group(function () {
     Route::post('/sharedsync', SharedSyncController::class);
-    Route::get('/sharedsync/migrate', MigrateController::class)->name('sharedsync.migrate');
 });
+
+Route::get('/sharedsync/migrate', MigrateController::class)->name('sharedsync.migrate');

@@ -24,11 +24,12 @@ class DiffCommand extends Command
         $this->info('Scanning files and comparing with manifest...');
 
         // 1. Scan
-        $scanner = new FileScanner(base_path(), $config['ignore']);
+        $ignoreList = array_merge($config['ignore'] ?? [], ['vendor']);
+        $scanner = new FileScanner(base_path(), $ignoreList);
         $allFiles = $scanner->scan();
 
         // 2. Manifest Comparison
-        $manifest = new Manifest(base_path());
+        $manifest = new Manifest(base_path(), $ignoreList);
         $lastManifestData = $manifest->load();
         
         $diff = $manifest->compare($allFiles, $lastManifestData);

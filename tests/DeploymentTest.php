@@ -196,6 +196,99 @@ class DeploymentTest extends TestCase
         $this->assertEquals('deleted.txt', $diff['delete'][0]);
     }
 
+    public function test_manifest_diffing_excludes_ignored_files_from_upload_and_delete()
+    {
+        $ignores = [
+            '.env',
+            'node_modules',
+            'tests/',
+            'storage/logs/*',
+            '*.bak',
+        ];
+
+        $manifest = new Manifest($this->tempDir, $ignores);
+
+        $currentFiles = [
+            ['path' => 'app/Http/Controllers/HomeController.php', 'hash' => 'h1', 'mtime' => 100],
+            ['path' => '.env', 'hash' => 'env_hash', 'mtime' => 100],
+            ['path' => 'node_modules/axios/index.js', 'hash' => 'axios_hash', 'mtime' => 100],
+            ['path' => 'tests/TestCase.php', 'hash' => 'test_hash', 'mtime' => 100],
+            ['path' => 'storage/logs/laravel.log', 'hash' => 'log_hash', 'mtime' => 100],
+            ['path' => 'backup.bak', 'hash' => 'bak_hash', 'mtime' => 100],
+        ];
+
+        $lastManifest = [
+            'app/Http/Controllers/HomeController.php' => ['hash' => 'old_h1', 'mtime' => 50],
+            'old_deleted.php' => ['hash' => 'del_h', 'mtime' => 50],
+            '.env' => ['hash' => 'env_old', 'mtime' => 50],
+            'node_modules/vue/index.js' => ['hash' => 'vue_h', 'mtime' => 50],
+            'tests/OldTest.php' => ['hash' => 'old_test', 'mtime' => 50],
+            'storage/logs/old.log' => ['hash' => 'old_log', 'mtime' => 50],
+            'temp.bak' => ['hash' => 'temp_bak', 'mtime' => 50],
+        ];
+
+        $diff = $manifest->compare($currentFiles, $lastManifest);
+
+        // Upload should ONLY contain HomeController.php; all ignored files excluded
+        $this->assertCount(1, $diff['upload']);
+        $this->assertEquals('app/Http/Controllers/HomeController.php', $diff['upload'][0]['path']);
+
+        // Delete should ONLY contain old_deleted.php; all ignored files in lastManifest excluded
+        $this->assertCount(1, $diff['delete']);
+        $this->assertEquals('old_deleted.php', $diff['delete'][0]);
+    }
+
+    public function test_manifest_diffing_with_compare_override_ignores()
+    {
+        $manifest = new Manifest($this->tempDir, []);
+
+        $currentFiles = [
+            ['path' => 'valid.php', 'hash' => 'h1', 'mtime' => 100],
+            ['path' => 'ignored.txt', 'hash' => 'h2', 'mtime' => 100],
+        ];
+
+        $lastManifest = [
+            'deleted.php' => ['hash' => 'h3', 'mtime' => 50],
+            'ignored_old.txt' => ['hash' => 'h4', 'mtime' => 50],
+        ];
+
+        $diff = $manifest->compare($currentFiles, $lastManifest, ['*.txt']);
+
+        $this->assertCount(1, $diff['upload']);
+        $this->assertEquals('valid.php', $diff['upload'][0]['path']);
+
+        $this->assertCount(1, $diff['delete']);
+        $this->assertEquals('deleted.php', $diff['delete'][0]);
+    }
+
+    public function test_manifest_diffing_with_deployignore_file()
+    {
+        file_put_contents($this->tempDir . '/.deployignore', "custom_ignore/\n*.secret\n");
+
+        $manifest = new Manifest($this->tempDir, ['.env']);
+
+        $currentFiles = [
+            ['path' => 'custom_ignore/file.txt', 'hash' => 'h1', 'mtime' => 100],
+            ['path' => 'keys.secret', 'hash' => 'h2', 'mtime' => 100],
+            ['path' => 'normal.php', 'hash' => 'h3', 'mtime' => 100],
+        ];
+
+        $lastManifest = [
+            'custom_ignore/old.txt' => ['hash' => 'h4', 'mtime' => 50],
+            'keys.secret' => ['hash' => 'h5', 'mtime' => 50],
+            '.env' => ['hash' => 'h6', 'mtime' => 50],
+            'to_be_deleted.php' => ['hash' => 'h7', 'mtime' => 50],
+        ];
+
+        $diff = $manifest->compare($currentFiles, $lastManifest);
+
+        $this->assertCount(1, $diff['upload']);
+        $this->assertEquals('normal.php', $diff['upload'][0]['path']);
+
+        $this->assertCount(1, $diff['delete']);
+        $this->assertEquals('to_be_deleted.php', $diff['delete'][0]);
+    }
+
     public function test_remote_directory_creation_logic()
     {
         $uploader = new MockUploader();
@@ -312,6 +405,111 @@ class DeploymentTest extends TestCase
 
         $this->assertContains('new.txt', $mockUploader->uploadedFiles);
         $this->assertContains('old.txt', $mockUploader->deletedFiles);
+    }
+
+    public function test_deploy_command_honors_ignore_list_and_does_not_delete_ignored_files()
+    {
+        $this->app['config']->set('sharedsync', [
+            'driver' => 'ftp',
+            'ftp' => ['host' => 'localhost', 'username' => 'user', 'password' => 'pass'],
+            'build' => ['composer' => false, 'npm' => false, 'artisan_cache' => false],
+            'ignore' => [
+                '.env',
+                'node_modules',
+                'storage/logs/*',
+                'tests',
+                'ignored_dir/',
+                '*.bak',
+            ],
+            'options' => ['delete_removed' => true],
+        ]);
+
+        $mockUploader = new MockUploader();
+        $this->app->bind('sharedsync.uploader', function() use ($mockUploader) {
+            return $mockUploader;
+        });
+
+        // Local files: valid file + ignored files
+        file_put_contents($this->tempDir . '/app.php', 'app content');
+        file_put_contents($this->tempDir . '/.env', 'APP_ENV=local');
+        file_put_contents($this->tempDir . '/backup.bak', 'bak content');
+        mkdir($this->tempDir . '/ignored_dir');
+        file_put_contents($this->tempDir . '/ignored_dir/sub.txt', 'sub content');
+
+        // Manifest has previous records of valid removed file, plus ignored entries
+        $manifest = new Manifest(base_path(), $this->app['config']->get('sharedsync.ignore'));
+        $manifest->save([
+            ['path' => 'old_deleted.php', 'hash' => 'old_hash', 'mtime' => 100],
+            ['path' => '.env', 'hash' => 'env_hash', 'mtime' => 100],
+            ['path' => 'node_modules/vue/index.js', 'hash' => 'vue_hash', 'mtime' => 100],
+            ['path' => 'tests/Test.php', 'hash' => 'test_hash', 'mtime' => 100],
+            ['path' => 'storage/logs/laravel.log', 'hash' => 'log_hash', 'mtime' => 100],
+            ['path' => 'ignored_dir/old.txt', 'hash' => 'old_sub_hash', 'mtime' => 100],
+            ['path' => 'old_backup.bak', 'hash' => 'old_bak_hash', 'mtime' => 100],
+        ]);
+
+        $this->artisan('sharedsync:deploy')
+            ->expectsConfirmation('Do you want to proceed with deleting these files?', 'yes')
+            ->assertExitCode(0);
+
+        // Upload verification: only non-ignored files are uploaded
+        $this->assertContains('app.php', $mockUploader->uploadedFiles);
+        $this->assertNotContains('.env', $mockUploader->uploadedFiles);
+        $this->assertNotContains('backup.bak', $mockUploader->uploadedFiles);
+        $this->assertNotContains('ignored_dir/sub.txt', $mockUploader->uploadedFiles);
+
+        // Delete verification: only genuine deleted files are deleted, none of the ignored files
+        $this->assertContains('old_deleted.php', $mockUploader->deletedFiles);
+        $this->assertNotContains('.env', $mockUploader->deletedFiles);
+        $this->assertNotContains('node_modules/vue/index.js', $mockUploader->deletedFiles);
+        $this->assertNotContains('tests/Test.php', $mockUploader->deletedFiles);
+        $this->assertNotContains('storage/logs/laravel.log', $mockUploader->deletedFiles);
+        $this->assertNotContains('ignored_dir/old.txt', $mockUploader->deletedFiles);
+        $this->assertNotContains('old_backup.bak', $mockUploader->deletedFiles);
+    }
+
+    public function test_deploy_command_honors_deployignore_file()
+    {
+        $this->app['config']->set('sharedsync', [
+            'driver' => 'ftp',
+            'ftp' => ['host' => 'localhost', 'username' => 'user', 'password' => 'pass'],
+            'build' => ['composer' => false, 'npm' => false, 'artisan_cache' => false],
+            'ignore' => [],
+            'options' => ['delete_removed' => true],
+        ]);
+
+        // Create .deployignore
+        file_put_contents($this->tempDir . '/.deployignore', "custom_secret/\n*.key\n");
+
+        $mockUploader = new MockUploader();
+        $this->app->bind('sharedsync.uploader', function() use ($mockUploader) {
+            return $mockUploader;
+        });
+
+        mkdir($this->tempDir . '/custom_secret');
+        file_put_contents($this->tempDir . '/custom_secret/secret.txt', 'secret');
+        file_put_contents($this->tempDir . '/server.key', 'key');
+        file_put_contents($this->tempDir . '/index.php', 'index');
+
+        // Old manifest with ignored file and deleted file
+        $manifest = new Manifest(base_path());
+        $manifest->save([
+            ['path' => 'custom_secret/old_secret.txt', 'hash' => 'h1', 'mtime' => 100],
+            ['path' => 'old.key', 'hash' => 'h2', 'mtime' => 100],
+            ['path' => 'truly_deleted.php', 'hash' => 'h3', 'mtime' => 100],
+        ]);
+
+        $this->artisan('sharedsync:deploy')
+            ->expectsConfirmation('Do you want to proceed with deleting these files?', 'yes')
+            ->assertExitCode(0);
+
+        $this->assertContains('index.php', $mockUploader->uploadedFiles);
+        $this->assertNotContains('custom_secret/secret.txt', $mockUploader->uploadedFiles);
+        $this->assertNotContains('server.key', $mockUploader->uploadedFiles);
+
+        $this->assertContains('truly_deleted.php', $mockUploader->deletedFiles);
+        $this->assertNotContains('custom_secret/old_secret.txt', $mockUploader->deletedFiles);
+        $this->assertNotContains('old.key', $mockUploader->deletedFiles);
     }
 
     public function test_ls_command()

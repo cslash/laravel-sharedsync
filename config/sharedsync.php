@@ -62,6 +62,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Files and directories that should be excluded from deployment.
+    | vendor directory and composer files should always be ignored as they are
+    | managed by the VendorCommand/VendorManager.
     |
     */
     'ignore' => [
@@ -83,8 +85,9 @@ return [
         'public/hot',
         '.deploy-manifest.json',
         '.deployignore',
-        'vendor/bin',
-        'vendor/phpunit',
+        'vendor',
+        'composer.json',
+        'composer.lock',
     ],
 
     /*

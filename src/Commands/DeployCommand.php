@@ -16,9 +16,7 @@ class DeployCommand extends Command
     protected $signature = 'sharedsync:deploy 
                             {--dry-run : Only show what would be uploaded}
                             {--force : Ignore manifest and upload everything}
-                            {--only= : Only upload specific folders (comma separated)}
-                            {--skip-vendor : Do not build or deploy the vendor directory}
-                            {--force-vendor : Force rebuild and redeployment of the vendor directory even if composer.lock has not changed}';
+                            {--only= : Only upload specific folders (comma separated)}';
 
     protected $description = 'Deploy Laravel project via FTP/SFTP';
 
@@ -50,20 +48,14 @@ class DeployCommand extends Command
         $buildPath = base_path();
         $builder = null;
 
-        $skipVendor = $this->option('skip-vendor');
+        $ignoreList = array_merge($config['ignore'] ?? [], ['vendor']);
 
         // Decide whether vendor needs building/deploying based on composer.lock changes
-        $manifest = new Manifest(base_path());
+        $manifest = new Manifest(base_path(), $ignoreList);
         $previousMeta = $manifest->getMeta();
-        $composerLockPath = base_path('composer.lock');
-        $composerLockHash = file_exists($composerLockPath) ? md5_file($composerLockPath) : null;
-        $composerLockChanged = ($previousMeta['composer_lock'] ?? null) !== $composerLockHash;
-        $buildVendor = !$skipVendor && ($composerLockChanged || $this->option('force') || $this->option('force-vendor'));
 
         try {
             $uploader = $this->getUploader($config);
-            $vendorManager = new VendorManager($uploader, $config['url'] ?? '', $this->output);
-            $vendorManager->setToken($token);
 
             if (!$this->option('dry-run')) {
                 $uploader->connect();
@@ -75,20 +67,6 @@ class DeployCommand extends Command
                 $builder = new Builder($buildConfig, base_path(), $this->output, $config['ignore'] ?? []);
                 $buildPath = $builder->build();
 
-                if ($buildVendor) {
-                    if (file_exists($buildPath . DIRECTORY_SEPARATOR . 'composer.lock')) {
-                        $vendorManager->buildLocal($buildPath);
-                    } else {
-                        $this->warn('composer.lock not found in build path; skipping vendor build.');
-                        $buildVendor = false;
-                    }
-                } else {
-                    if ($skipVendor) {
-                        $this->info('Vendor deployment is disabled (--skip-vendor). Skipping composer install in build.');
-                    } else {
-                        $this->info('composer.lock unchanged; skipping composer install in build.');
-                    }
-                }
             } else {
                 $this->warn('Skipping build in dry-run mode.');
             }
@@ -97,7 +75,6 @@ class DeployCommand extends Command
             $this->info('Scanning files...');
             // Vendor is always handled separately (zip + extract or remote composer)
             // through VendorManager, so exclude it from the regular file scan/upload.
-            $ignoreList = array_merge($config['ignore'], ['vendor']);
             $scanner = new FileScanner($buildPath, $ignoreList);
             $allFiles = $scanner->scan();
 
@@ -175,12 +152,6 @@ class DeployCommand extends Command
                 }
             }
 
-            // 5. Vendor deployment
-            if ($buildVendor) {
-                $localVendorDir = $buildPath . DIRECTORY_SEPARATOR . 'vendor';
-                $vendorManager->deployVendor($localVendorDir);
-            }
-
             // 6. Save Manifest
             $this->info('Updating manifest...');
             $filesForManifest = $allFiles;
@@ -192,7 +163,6 @@ class DeployCommand extends Command
                 ];
             }
             $manifest->save($filesForManifest, [
-                'composer_lock' => $composerLockHash,
             ]);
 
             // 7. Remote Checks

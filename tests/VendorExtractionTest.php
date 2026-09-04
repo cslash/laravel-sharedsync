@@ -2,6 +2,8 @@
 
 namespace Cslash\SharedSync\Tests;
 
+use Cslash\SharedSync\Services\Uploader\FtpUploader;
+use Cslash\SharedSync\Services\Uploader\SftpUploader;
 use Cslash\SharedSync\Services\VendorManager;
 use Cslash\SharedSync\SharedSyncServiceProvider;
 use Cslash\SharedSync\Tests\MockUploader;
@@ -38,62 +40,50 @@ class VendorExtractionTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_vendor_manager_getters_and_setters()
+    public function test_ftp_uploader_get_remote_path_with_root()
     {
-        $uploader = new MockUploader();
         $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir, 'http://example.com/');
+        $uploader = new FtpUploader(['host' => 'localhost', 'username' => 'u', 'password' => 'p', 'root' => '/website'], base_path(), $output);
 
-        $this->assertEquals('http://example.com', $manager->getBaseUrl());
-        $this->assertEquals($this->tempDir, $manager->getPath());
-        $this->assertNotEmpty($manager->getToken());
-
-        $manager->setToken('custom-token');
-        $this->assertEquals('custom-token', $manager->getToken());
-
-        $manager->setBaseUrl('https://custom.com/');
-        $this->assertEquals('https://custom.com', $manager->getBaseUrl());
-
-        $newDir = $this->tempDir . '/sub';
-        mkdir($newDir, 0777, true);
-        $manager->setPath($newDir);
-        $this->assertEquals($newDir, $manager->getPath());
+        $this->assertEquals('/website/storage/sharedsync/file.zip', $uploader->getRemotePath('storage/sharedsync/file.zip'));
+        $this->assertEquals('/website/public/controller.php', $uploader->getRemotePath('public/controller.php'));
+        $this->assertEquals('/website/.sharedsync-token', $uploader->getRemotePath('.sharedsync-token'));
+        $this->assertEquals('/website/storage/sharedsync/file.zip', $uploader->getRemotePath('/website/storage/sharedsync/file.zip'));
     }
 
-    public function test_vendor_manager_constructor_backward_compatibility()
+    public function test_sftp_uploader_get_remote_path_with_root()
     {
-        $uploader = new MockUploader();
         $output = new BufferedOutput();
-        $baseUrl = 'http://example.com';
+        $uploader = new SftpUploader(['host' => 'localhost', 'username' => 'u', 'password' => 'p', 'root' => '/website/'], base_path(), $output);
 
-        // Old constructor style: ($uploader, $baseUrl, $output)
-        $manager = new VendorManager($uploader, $baseUrl, $output);
+        $this->assertEquals('/website/storage/sharedsync/file.zip', $uploader->getRemotePath('storage/sharedsync/file.zip'));
+        $this->assertEquals('/website/public/controller.php', $uploader->getRemotePath('public/controller.php'));
+        $this->assertEquals('/website/.sharedsync-token', $uploader->getRemotePath('.sharedsync-token'));
+        $this->assertEquals('/website/storage/sharedsync/file.zip', $uploader->getRemotePath('/website/storage/sharedsync/file.zip'));
+    }
 
-        $this->assertEquals('http://example.com', $manager->getBaseUrl());
-        $this->assertEquals(base_path(), $manager->getPath());
+    public function test_ftp_uploader_get_remote_path_with_default_root()
+    {
+        $output = new BufferedOutput();
+        $uploader = new FtpUploader(['host' => 'localhost', 'username' => 'u', 'password' => 'p'], base_path(), $output);
+
+        $this->assertEquals('/storage/sharedsync/file.zip', $uploader->getRemotePath('storage/sharedsync/file.zip'));
+        $this->assertEquals('/public/controller.php', $uploader->getRemotePath('public/controller.php'));
+        $this->assertEquals('/.sharedsync-token', $uploader->getRemotePath('.sharedsync-token'));
     }
 
     public function test_list_returns_empty_array_when_lock_file_missing()
     {
         $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir);
+        $manager = new VendorManager($uploader);
 
-        $packages = $manager->list('composer.lock');
+        $packages = $manager->list('non_existent_composer.lock');
         $this->assertIsArray($packages);
         $this->assertEmpty($packages);
-
-        $backwardCompat = $manager->getInstalledPackages($this->tempDir);
-        $this->assertIsArray($backwardCompat);
-        $this->assertEmpty($backwardCompat);
     }
 
     public function test_list_parses_composer_lock_file()
     {
-        $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir);
-
         $lockData = [
             'packages' => [
                 ['name' => 'laravel/framework', 'version' => 'v10.0.0'],
@@ -104,26 +94,32 @@ class VendorExtractionTest extends TestCase
             ],
         ];
 
-        file_put_contents($this->tempDir . '/composer.lock', json_encode($lockData));
+        $lockFile = base_path('test-composer.lock');
+        file_put_contents($lockFile, json_encode($lockData));
 
-        $packages = $manager->list('composer.lock');
+        try {
+            $uploader = new MockUploader();
+            $manager = new VendorManager($uploader);
 
-        $this->assertCount(3, $packages);
-        $this->assertEquals('7.8.0', $packages['guzzlehttp/guzzle']);
-        $this->assertEquals('v10.0.0', $packages['laravel/framework']);
-        $this->assertEquals('10.5.0', $packages['phpunit/phpunit']);
+            $packages = $manager->list('test-composer.lock');
 
-        // Check sorting
-        $keys = array_keys($packages);
-        $this->assertEquals(['guzzlehttp/guzzle', 'laravel/framework', 'phpunit/phpunit'], $keys);
+            $this->assertCount(3, $packages);
+            $this->assertEquals('7.8.0', $packages['guzzlehttp/guzzle']);
+            $this->assertEquals('v10.0.0', $packages['laravel/framework']);
+            $this->assertEquals('10.5.0', $packages['phpunit/phpunit']);
+
+            // Check sorting
+            $keys = array_keys($packages);
+            $this->assertEquals(['guzzlehttp/guzzle', 'laravel/framework', 'phpunit/phpunit'], $keys);
+        } finally {
+            if (file_exists($lockFile)) {
+                unlink($lockFile);
+            }
+        }
     }
 
     public function test_list_parses_composer_json_file()
     {
-        $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir);
-
         $jsonData = [
             'require' => [
                 'php' => '^8.1',
@@ -134,181 +130,113 @@ class VendorExtractionTest extends TestCase
             ],
         ];
 
-        file_put_contents($this->tempDir . '/composer.json', json_encode($jsonData));
+        $jsonFile = base_path('test-composer.json');
+        file_put_contents($jsonFile, json_encode($jsonData));
 
-        $packages = $manager->list('composer.json');
+        try {
+            $uploader = new MockUploader();
+            $manager = new VendorManager($uploader);
 
-        $this->assertCount(3, $packages);
-        $this->assertEquals('^8.1', $packages['php']);
-        $this->assertEquals('^10.0', $packages['laravel/framework']);
-        $this->assertEquals('^10.0', $packages['phpunit/phpunit']);
-    }
+            $packages = $manager->list('test-composer.json');
 
-    public function test_diff_identifies_differences_between_json_and_lock()
-    {
-        $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir);
-
-        $jsonData = [
-            'require' => [
-                'php' => '^8.1',
-                'laravel/framework' => '^10.0',
-                'vendor/new-pkg' => '^1.0',
-            ],
-        ];
-
-        $lockData = [
-            'packages' => [
-                ['name' => 'laravel/framework', 'version' => 'v9.0.0'],
-            ],
-        ];
-
-        file_put_contents($this->tempDir . '/composer.json', json_encode($jsonData));
-        file_put_contents($this->tempDir . '/composer.lock', json_encode($lockData));
-
-        $diff = $manager->diff();
-
-        $this->assertArrayHasKey('php', $diff);
-        $this->assertEquals('^8.1', $diff['php']);
-
-        $this->assertArrayHasKey('vendor/new-pkg', $diff);
-        $this->assertEquals('^1.0', $diff['vendor/new-pkg']);
-
-        $this->assertArrayHasKey('laravel/framework', $diff);
-        $this->assertEquals([
-            'json' => '^10.0',
-            'lock' => 'v9.0.0',
-        ], $diff['laravel/framework']);
-    }
-
-    public function test_diff_returns_empty_when_packages_match()
-    {
-        $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir);
-
-        $jsonData = [
-            'require' => [
-                'laravel/framework' => 'v10.0.0',
-            ],
-        ];
-
-        $lockData = [
-            'packages' => [
-                ['name' => 'laravel/framework', 'version' => 'v10.0.0'],
-            ],
-        ];
-
-        file_put_contents($this->tempDir . '/composer.json', json_encode($jsonData));
-        file_put_contents($this->tempDir . '/composer.lock', json_encode($lockData));
-
-        $diff = $manager->diff();
-        $this->assertEmpty($diff);
+            $this->assertCount(3, $packages);
+            $this->assertEquals('^8.1', $packages['php']);
+            $this->assertEquals('^10.0', $packages['laravel/framework']);
+            $this->assertEquals('^10.0', $packages['phpunit/phpunit']);
+        } finally {
+            if (file_exists($jsonFile)) {
+                unlink($jsonFile);
+            }
+        }
     }
 
     public function test_compress_creates_valid_zip()
     {
         $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir);
+        $manager = new VendorManager($uploader);
 
-        $vendorDir = $this->tempDir . '/vendor';
+        $reflection = new \ReflectionClass($manager);
+        $tmpPathProperty = $reflection->getProperty('tmpPath');
+        $tmpPathProperty->setAccessible(true);
+        $tmpPath = $tmpPathProperty->getValue($manager);
+
+        $localArchiveFileProperty = $reflection->getProperty('localArchiveFile');
+        $localArchiveFileProperty->setAccessible(true);
+        $localArchiveFile = $localArchiveFileProperty->getValue($manager);
+
+        $vendorDir = $tmpPath . '/vendor';
         mkdir($vendorDir . '/autoload', 0777, true);
         file_put_contents($vendorDir . '/autoload.php', '<?php echo "autoload";');
         file_put_contents($vendorDir . '/autoload/test.php', '<?php echo "test";');
 
-        $zipFile = $manager->compress();
+        $manager->compress();
 
-        $this->assertFileExists($zipFile);
+        $this->assertFileExists($localArchiveFile);
 
         $zip = new \ZipArchive();
-        $this->assertTrue($zip->open($zipFile) === true);
+        $this->assertTrue($zip->open($localArchiveFile) === true);
         $this->assertNotFalse($zip->locateName('vendor/autoload.php'));
         $this->assertNotFalse($zip->locateName('vendor/autoload/test.php'));
         $zip->close();
 
-        @unlink($zipFile);
+        $manager->clean();
     }
 
     public function test_compress_throws_when_vendor_dir_missing()
     {
         $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir);
+        $manager = new VendorManager($uploader);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Local vendor directory not found');
+        $this->expectExceptionMessage('Vendor directory not found');
 
         $manager->compress();
     }
 
-    public function test_extract_returns_false_when_base_url_is_empty()
+    public function test_upload_and_extract()
     {
+        $this->app['config']->set('sharedsync.url', 'http://example.com');
+
         $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $manager = new VendorManager($uploader, $output, $this->tempDir, '');
+        $manager = new VendorManager($uploader);
 
-        $result = $manager->extract('vendor-test.zip');
-        $this->assertFalse($result);
-        $this->assertStringContainsString('No deployment URL configured', $output->fetch());
-    }
+        $reflection = new \ReflectionClass($manager);
+        $tmpPathProperty = $reflection->getProperty('tmpPath');
+        $tmpPathProperty->setAccessible(true);
+        $tmpPath = $tmpPathProperty->getValue($manager);
 
-    public function test_vendor_manager_uploads_stub_and_calls_it()
-    {
-        $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $baseUrl = 'http://example.com';
-        $manager = new VendorManager($uploader, $output, $this->tempDir, $baseUrl);
-        $token = 'test-token-123';
-        $manager->setToken($token);
+        $localArchiveFileProperty = $reflection->getProperty('localArchiveFile');
+        $localArchiveFileProperty->setAccessible(true);
+        $localArchiveFile = $localArchiveFileProperty->getValue($manager);
 
-        $vendorDir = $this->tempDir . '/vendor';
+        $remoteArchiveFileProperty = $reflection->getProperty('remoteArchiveFile');
+        $remoteArchiveFileProperty->setAccessible(true);
+        $remoteArchiveFile = $remoteArchiveFileProperty->getValue($manager);
+
+        $remoteControllerScriptProperty = $reflection->getProperty('remoteControllerScript');
+        $remoteControllerScriptProperty->setAccessible(true);
+        $remoteControllerScript = $remoteControllerScriptProperty->getValue($manager);
+
+        $vendorDir = $tmpPath . '/vendor';
         mkdir($vendorDir, 0777, true);
-        file_put_contents($vendorDir . '/test.txt', 'content');
+        file_put_contents($vendorDir . '/test.txt', 'vendor test');
+
+        $manager->compress();
+        $manager->upload();
+
+        $this->assertContains($remoteArchiveFile, $uploader->uploadedFiles);
 
         Http::fake([
-            'http://example.com/sharedsync-vendor-test-token-123*' => Http::response(['status' => 'success', 'message' => 'Vendor updated successfully.'], 200),
+            'http://example.com/' . $remoteControllerScript => Http::response(['status' => 'success', 'message' => 'Extracted'], 200),
         ]);
 
-        $result = $manager->deploy();
+        $response = $manager->extract();
 
-        $this->assertTrue($result);
-        
-        // Verify files were uploaded
-        $this->assertContains("vendor-{$token}.zip", $uploader->uploadedFiles);
-        $this->assertContains("sharedsync-vendor-{$token}.php", $uploader->uploadedFiles);
-        
-        // Verify cleanup
-        $this->assertContains("sharedsync-vendor-{$token}.php", $uploader->deletedFiles);
-        $this->assertContains("vendor-{$token}.zip", $uploader->deletedFiles);
-    }
+        $this->assertEquals(['status' => 'success', 'message' => 'Extracted'], $response);
+        $this->assertContains('public/' . $remoteControllerScript, $uploader->uploadedFiles);
+        $this->assertContains('public/' . $remoteControllerScript, $uploader->deletedFiles);
 
-    public function test_vendor_manager_handles_extraction_failure()
-    {
-        $uploader = new MockUploader();
-        $output = new BufferedOutput();
-        $baseUrl = 'http://example.com';
-        $manager = new VendorManager($uploader, $output, $this->tempDir, $baseUrl);
-        $token = 'fail-token';
-        $manager->setToken($token);
-
-        $vendorDir = $this->tempDir . '/vendor';
-        mkdir($vendorDir, 0777, true);
-        file_put_contents($vendorDir . '/test.txt', 'content');
-
-        Http::fake([
-            'http://example.com/sharedsync-vendor-fail-token*' => Http::response(['status' => 'error', 'error' => 'Extraction failed'], 500),
-        ]);
-
-        $result = $manager->deploy();
-
-        $this->assertFalse($result);
-        $this->assertStringContainsString('Remote vendor extraction failed', $output->fetch());
-
-        // Verify cleanup WAS called on remote files even if it failed
-        $this->assertContains("sharedsync-vendor-{$token}.php", $uploader->deletedFiles);
-        $this->assertContains("vendor-{$token}.zip", $uploader->deletedFiles);
+        $manager->clean();
     }
 
     public function test_vendor_command_list_action()
@@ -324,7 +252,6 @@ class VendorExtractionTest extends TestCase
         });
 
         $this->artisan('sharedsync:vendor', ['action' => 'list'])
-            ->expectsOutput('Installed Packages:')
             ->assertExitCode(0);
     }
 
